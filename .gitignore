@@ -1,0 +1,18 @@
+# secrets
+.env
+backend/.env
+
+# python
+venv/
+__pycache__/
+*.pyc
+
+# data (too large for git, and not something we want to commit anyway)
+data/*.csv
+
+# node
+node_modules/
+
+# os
+.DS_Store
+Icon?
