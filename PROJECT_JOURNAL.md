@@ -150,12 +150,89 @@ A **feature** is a number that describes a transaction in a way that helps tell 
 
 | Problem | Why it's a problem | Fix |
 |---|---|---|
-| Feature code is copy-pasted in `features.py` and `train_model.py` | A bug fixed in one place won't be fixed in the other. Training and live scoring could compute features differently ("training/serving skew"). | One `compute_features()` function that both import (task A1) |
-| `train_model.py` never trains a model | Nothing downstream can work | Fit, evaluate, save (task A2) |
+| ~~`train_model.py` never trains a model~~ ✅ fixed | | Task A2, see section 11 |
+| ~~Feature code is copy-pasted in `features.py` and `train_model.py`~~ ✅ fixed | A bug fixed in one place won't be fixed in the other. Training and live scoring could compute features differently ("training/serving skew"). | One `compute_features()` function that both import (task A1, see section 10) |
 | `transactions` table isn't created anywhere | A fresh setup crashes on insert | `schema.sql` (task B4) |
 | No `requirements.txt` | Nobody else (or CI) can install the project | Add it (task B5) |
 
 **Interview line on training/serving skew:** "I made sure training and live scoring share a single feature function, so the model sees features computed the same way in both places."
+
+---
+
+## 10. Task A1: one shared feature module
+
+**What:** `features.py` used to be a script that printed things. Now it's a small library that other files import:
+- `compute_features(df)` adds `txns_last_hour`, `new_merchant` and `distance_km`.
+- `distance_threshold(df)` finds the 90th-percentile distance. Only ever call it on **training** data.
+- `add_distance_flag(df, threshold)` turns distance into true/false using that saved threshold.
+- `FEATURE_COLUMNS` is the single list of the 4 columns the model uses, so training and scoring can't pick different ones.
+- The old exploration prints still run if you do `python features.py`, because they're under `if __name__ == "__main__":`. They don't run when another file imports it.
+
+**Why the threshold is a separate step:** The threshold must be learned from training data and then **reused** on test data and live transactions. If `compute_features` worked it out by itself, live scoring would calculate a new threshold from whatever small batch it was given, which would be wrong.
+
+**How live scoring will reuse it (task A3):** Take that card's recent transactions from Postgres, add the new transaction, run `compute_features`, and keep the new transaction's row. Same code, same answers.
+
+**Small robustness fixes I made along the way:**
+- The function sorts by card and time itself, so the caller doesn't have to remember to.
+- The hourly count now counts the `amt` column (numbers) instead of `trans_num` (text). Newer pandas versions can refuse to do rolling counts on text columns.
+- The rolling result is assigned by position after sorting. The old version matched rows by timestamp, which can go wrong when two cards have transactions at the same second.
+
+**How I checked it:** The real CSV wasn't on disk, so I built 6 fake transactions where I knew the correct answers (rows out of order, two cards, a 70-minute gap, a merchant 1° of latitude away ≈ 111 km) and checked every feature value.
+
+**Interview line:** "I pulled feature engineering into one module that both the training pipeline and the live scoring path import, so there's no training/serving skew. Values learned from data, like the distance threshold, are fitted on the training set and passed in, never recomputed at serving time."
+
+---
+
+## 11. Task A2: training the model and reading the results
+
+**What the code does:**
+1. **Scales the features** (`StandardScaler`). `amt` goes up to about $28,000, while the other features are 0/1 or small counts. Scaling changes each one into "how far from a typical transaction is this?" That helps the model train, and it makes the weights comparable with each other.
+2. **Fits `LogisticRegression(class_weight="balanced")`** on 1,037,340 training rows (6,005 fraud).
+3. **Tests on 259,335 rows it has never seen** (1,501 fraud).
+4. **Saves one bundle** to `backend/models/risk_model.joblib` with the model, the distance threshold (112.8 km) and the feature list. Scoring needs all three, so they're saved together and can't get out of sync.
+
+**The results:**
+
+Confusion matrix (test set, cutoff 0.5):
+
+|  | Predicted not fraud | Predicted fraud |
+|---|---|---|
+| **Actually not fraud** | 241,546 ✅ | 16,288 (false alarms) |
+| **Actually fraud** | 317 (missed) | 1,184 ✅ caught |
+
+- **Recall 0.79:** we catch 79% of fraud.
+- **Precision 0.068:** only about 1 in 15 flagged transactions is really fraud, so there are lots of false alarms.
+- **Accuracy 0.936:** ignore this. A model that always says "not fraud" would score 0.994, which is *higher*, and it would catch nothing.
+- **PR-AUC 0.21 vs 0.0058 for random guessing:** the model ranks fraud above normal transactions about **36× better than chance**.
+
+**What the weights tell us (after scaling):**
+
+| Feature | Weight | Meaning |
+|---|---|---|
+| `amt` | +1.24 | Strongest signal. Fraud averages $531, normal spending $68. |
+| `txns_last_hour` | +0.43 | Rapid repeated use raises risk |
+| `new_merchant` | +0.30 | First-time merchants raise risk |
+| `merchant_distance_flag` | −0.01 | **About zero. This feature does nothing.** |
+
+**An honest finding: the distance feature doesn't work on this data.** The fraud rate is 0.579% for "far" merchants and 0.575% for "near" ones, so they're practically the same. In the Sparkov simulator, merchant locations are random points near the customer whether or not the transaction is fraud. The idea is sound for real data, but this dataset doesn't contain that signal. I'm keeping the feature for now. With a weight of about zero it never shows up as a reason, so it does no harm.
+
+**Precision vs recall at different cutoffs (this decides the risk levels in A3):**
+
+| Flag if probability ≥ | Flagged | Precision | Recall |
+|---|---|---|---|
+| 0.5 | 17,472 | 0.07 | 0.79 |
+| 0.7 | 7,127 | 0.14 | 0.67 |
+| 0.9 | 3,476 | 0.23 | 0.53 |
+| 0.99 | 1,528 | 0.41 | 0.42 |
+
+Raising the cutoff means fewer false alarms but more fraud getting through. That's the core **precision/recall trade-off**. A bank chooses the cutoff based on what a missed fraud costs compared with an annoyed customer. **Plan for A3:** High risk = ≥ 0.9, Medium = 0.5 to 0.9, Low = below 0.5.
+
+**Known limitations (I should say these before an interviewer does):**
+- Only 4 features, so precision is low. Features likely to help a lot later: hour of day (Sparkov fraud clusters late at night), merchant category, and amount compared with *this card's* usual spending.
+- The split is random rather than by time. A more realistic test is to train on earlier months and test on later ones. `fraudTest.csv` covers a later period and could be used as that held-out set.
+- `new_merchant` treats the first appearance in the dataset as "new", so every card's earliest transactions look new.
+
+**Interview line:** "With 0.58% fraud, accuracy was meaningless, so I evaluated with precision, recall and PR-AUC. The model catches 79% of fraud at a 0.5 cutoff with a PR-AUC about 36× above baseline. I mapped the precision/recall trade-off across cutoffs to set the risk bands. Looking at the coefficients also showed that my distance feature carried no signal in this simulated data. That's the kind of thing an interpretable model makes easy to catch."
 
 ---
 
@@ -170,3 +247,8 @@ A **feature** is a number that describes a transaction in a way that helps tell 
 | Sep 2026 | MongoDB Atlas over Pinecone | One less service |
 | Sep 2026 | Retrieve 8-10 candidates + SQL aggregate | Better grounded answers |
 | 2026-10-17 | Track progress in `STATUS.md`, explanations here | Keep the project understandable for interviews |
+| 2026-10-17 | Single `features.py` module; threshold passed in, not recomputed | Prevent training/serving skew and leakage |
+| 2026-10-17 | StandardScaler before LogisticRegression | Comparable weights, so explanations are fair |
+| 2026-10-17 | Save model + threshold + feature list as one bundle | Scoring can't use a mismatched threshold |
+| 2026-10-17 | Keep distance flag despite ~0 weight | Harmless, honest finding to discuss; revisit with better features |
+| 2026-10-17 | Risk bands: High ≥ 0.9, Medium 0.5 to 0.9, Low < 0.5 | Based on the precision/recall table |
