@@ -150,9 +150,9 @@ A **feature** is a number that describes a transaction in a way that helps tell 
 
 | Problem | Why it's a problem | Fix |
 |---|---|---|
+| ~~`transactions` table isn't created anywhere~~ ✅ fixed | | Task B4, see section 13 |
 | ~~`train_model.py` never trains a model~~ ✅ fixed | | Task A2, see section 11 |
 | ~~Feature code is copy-pasted in `features.py` and `train_model.py`~~ ✅ fixed | A bug fixed in one place won't be fixed in the other. Training and live scoring could compute features differently ("training/serving skew"). | One `compute_features()` function that both import (task A1, see section 10) |
-| `transactions` table isn't created anywhere | A fresh setup crashes on insert | `schema.sql` (task B4) |
 | No `requirements.txt` | Nobody else (or CI) can install the project | Add it (task B5) |
 
 **Interview line on training/serving skew:** "I made sure training and live scoring share a single feature function, so the model sees features computed the same way in both places."
@@ -280,6 +280,45 @@ Raising the cutoff means fewer false alarms but more fraud getting through. That
 
 ---
 
+## 13. Task B4: the database tables
+
+**What:** `backend/schema.sql` creates two tables, and `docker-compose.yml` runs Postgres 16 in Docker, creating those tables automatically on the first start. Anyone who clones the repo runs `docker compose up -d` and has a working database.
+
+**Why two tables instead of one:**
+- `transactions` holds **facts**: card, merchant, amount, time, locations. They never change.
+- `risk_scores` holds the model's **opinion** about each transaction: score, level, reasons. If we retrain the model, opinions can change but facts can't. Keeping them apart also lets us record `model_version`, so we always know which model said what.
+- They're linked by `risk_scores.transaction_id → transactions.id` (a **foreign key**).
+
+**Rules built into the database (constraints):**
+
+| Rule | What it stops |
+|---|---|
+| `trans_num UNIQUE` | Saving the same transaction twice |
+| `amount >= 0` | Negative amounts |
+| `risk_score BETWEEN 0 AND 1` | Impossible scores |
+| `risk_level IN ('low','medium','high')` | Typos like "Hgih" |
+| `transaction_id UNIQUE` + foreign key | Two scores for one transaction, or a score for a transaction that doesn't exist |
+| `ON DELETE CASCADE` | Leftover scores after a transaction is deleted |
+
+Putting rules in the database (and not only in Python) means that even buggy code can't save bad data. I tested each one, and Postgres rejected them all.
+
+**The index on `(cc_num, trans_time)`:** for every new transaction, scoring asks "show me this card's recent transactions". Without an index, Postgres would read every row in the table. With one, it jumps straight to that card's rows, like a book's index. I checked with `EXPLAIN`, which shows the query plan Postgres uses, and it says `Index Scan using idx_transactions_card_time`.
+
+**Small type choices worth knowing:**
+- `cc_num` is `TEXT`, not a number. Card numbers are identifiers, not quantities. You never do maths on them, and storing them as numbers can drop leading zeros.
+- `amount` is `NUMERIC(12,2)`, an exact decimal. Floats can't store money exactly (0.1 + 0.2 ≠ 0.3 in floating point).
+- `reasons`, `contributions` and `features` are `JSONB`. They're lists and dictionaries that the frontend shows as they are, and JSONB can still be queried.
+
+**What changed along the way:**
+- The old `.env` pointed at a Supabase database that no longer exists (free projects get paused or deleted after inactivity). We switched to local Docker Postgres, which was the original plan anyway.
+- Docker runs on port **5433**, because a Homebrew Postgres was already using the default 5432.
+- The first attempt failed with an I/O error because the Mac's disk was full (188 MB free). Clearing caches freed about 5.7 GB.
+- The password in `docker-compose.yml` is a **local development password only**. Real secrets live in `.env`, which is gitignored.
+
+**Interview line:** "I split immutable transaction facts from model-generated risk scores, so rescoring with a new model version doesn't touch source data. Data integrity is enforced in the database with check constraints, a unique transaction ID and foreign keys, and I added a composite index on card and timestamp because every scoring request looks up that card's recent history. I verified that with EXPLAIN."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -299,3 +338,7 @@ Raising the cutoff means fewer false alarms but more fraud getting through. That
 | 2026-10-17 | Reasons = top 3 positive `coef × scaled value`, min 0.1 | Show only features that meaningfully raised the risk |
 | 2026-10-17 | Call it "risk score", not "fraud probability" | Balanced class weights mean it isn't calibrated |
 | 2026-10-17 | Scorer uses Sparkov column names; the API maps to them in B6 | One feature pipeline, no duplicate column logic |
+| 2026-10-17 | Strip the `fraud_` merchant prefix once, at API entry (B6) | Stops the dashboard and RAG treating a naming quirk as evidence |
+| 2026-10-17 | Separate `transactions` (facts) and `risk_scores` (model output) | Rescoring doesn't touch facts; track model_version |
+| 2026-10-17 | Local Docker Postgres on port 5433, not Supabase | Supabase project gone; 5432 taken by Homebrew Postgres |
+| 2026-10-17 | Integrity rules as DB constraints + (cc_num, trans_time) index | Bad data rejected at the source; fast history lookups |

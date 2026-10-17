@@ -7,8 +7,9 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 ## Right now
 
 - **Current phase:** Phase B (wire it into a real API)
-- **Next task:** B4, `schema.sql` (`transactions` + `risk_scores` tables)
+- **Next task:** B5, `requirements.txt` (then B6, wire scoring into the API)
 - **Blockers:** none
+- **To start the database:** `docker compose up -d` from the repo root (Postgres 16 on port **5433**)
 
 ## What exists today (commit `6928f16`)
 
@@ -19,7 +20,9 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 | `backend/train_model.py` | ✅ | Trains scaled `LogisticRegression(class_weight="balanced")`, prints evaluation, saves bundle. |
 | `backend/scoring.py` | ✅ | `score_transaction(txn, history)` returns risk score, level, plain-English reasons, features and contributions. |
 | `backend/models/risk_model.joblib` | ✅ | Saved bundle: model + distance threshold + feature list (1.9 KB, committed). |
-| `backend/main.py` | 🟡 | `POST /transactions` inserts into Postgres, but the `transactions` table is never created anywhere. No scoring yet. |
+| `backend/main.py` | 🟡 | `POST /transactions` inserts into Postgres (works now). No scoring yet. A duplicate `trans_num` returns 500 instead of 409 and leaks the connection (fix in B6). |
+| `backend/schema.sql` | ✅ | `transactions` + `risk_scores` tables, constraints, indexes. |
+| `docker-compose.yml` | ✅ | Local Postgres 16 on port 5433. Runs `schema.sql` on first start. |
 | `frontend/` | ⬜ | Empty folder. |
 
 ## Phase A: Finish the model
@@ -34,8 +37,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 | # | Task | Status |
 |---|---|---|
-| B4 | `schema.sql` with `transactions` + `risk_scores` tables | ⬜ |
-| B5 | `requirements.txt` + `docker-compose.yml` (Postgres) | ⬜ |
+| B4 | `schema.sql` with `transactions` + `risk_scores` tables | ✅ |
+| B5 | `requirements.txt` + `docker-compose.yml` (Postgres) | 🟡 compose done, requirements.txt pending |
 | B6 | `POST /transactions` pulls card history, scores, writes to `risk_scores` | ⬜ |
 
 ## Phase C: RAG ("ask questions about transactions")
@@ -61,6 +64,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 Add one line every time something moves.
 
+- **2026-10-17:** B4 done. The old Supabase DB no longer exists, so we switched `.env` to local Docker Postgres (port 5433; Homebrew Postgres already uses 5432). Freed disk space first, since the Mac had 188 MB left. Tested: the API insert works, the constraints reject bad scores/levels/orphan rows/duplicate IDs, and card-history lookups use the index.
 - **2026-10-17:** A3 done, so **Phase A is complete**. `scoring.py` was tested on unseen `fraudTest.csv` rows: a real $996 fraud scored 0.998 (high), a normal $53 purchase scored 0.26 (low), a 4-in-an-hour burst made velocity the top reason, and a routine repeat purchase gave "no unusual signals".
 - **2026-10-17:** A2 done. Model trained on 1.04M rows and tested on 259K. At a 0.5 cutoff it catches 79% of fraud with 6.8% precision; PR-AUC is 0.21 vs a 0.0058 random baseline. The distance flag turned out to carry no signal (see journal §11).
 - **2026-10-17:** A1 done. Feature logic now lives only in `features.py`; `train_model.py` imports it. Checked against hand-made test transactions.
