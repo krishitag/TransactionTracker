@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from psycopg2.extras import Json, RealDictCursor
 from pydantic import BaseModel, Field
 
+from embeddings import build_summary, embed, get_model, to_pgvector
 from scoring import model_version, score_transaction
 
 load_dotenv()
@@ -15,6 +16,9 @@ load_dotenv()
 app = FastAPI()
 
 MODEL_VERSION = model_version()
+
+# Load the embedding model at startup so the first request isn't slow.
+get_model()
 
 
 class TransactionIn(BaseModel):
@@ -111,15 +115,22 @@ def create_transaction(txn: TransactionIn):
 
             result = score_transaction(to_scoring_row(txn.model_dump()), history)
 
+            summary = build_summary(
+                txn.model_dump(), result["risk_score"], result["risk_level"], result["reasons"]
+            )
+            embedding = embed([summary])[0]
+
             cur.execute(
                 """
                 INSERT INTO risk_scores
-                    (transaction_id, risk_score, risk_level, reasons, contributions, features, model_version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s);
+                    (transaction_id, risk_score, risk_level, reasons, contributions, features,
+                     model_version, summary, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector);
                 """,
                 (
                     new_id, result["risk_score"], result["risk_level"], Json(result["reasons"]),
                     Json(result["contributions"]), Json(result["features"]), MODEL_VERSION,
+                    summary, to_pgvector(embedding),
                 ),
             )
     finally:

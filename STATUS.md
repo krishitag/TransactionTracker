@@ -7,7 +7,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 ## Right now
 
 - **Current phase:** Phase C (RAG)
-- **Next task:** C7, MongoDB Atlas vector index + embed transaction summaries on insert
+- **Next task:** C8, `POST /ask` (hybrid retrieval + Claude)
 - **Blockers:** none
 - **To start the database:** `docker compose up -d` from the repo root (Postgres 16 on port **5433**)
 
@@ -21,7 +21,11 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 | `backend/scoring.py` | ✅ | `score_transaction(txn, history)` returns risk score, level, plain-English reasons, features and contributions. |
 | `backend/models/risk_model.joblib` | ✅ | Saved bundle: model + distance threshold + feature list (1.9 KB, committed). |
 | `backend/main.py` | ✅ | `POST /transactions` validates, cleans, saves, scores and stores the risk score in one DB transaction. 409 on duplicate, 422 on bad input. |
-| `backend/requirements.txt` | ✅ | Pinned versions of what the code uses today. RAG packages get added in Phase C. |
+| `backend/requirements.txt` | ✅ | Pinned versions, including sentence-transformers, torch and anthropic. |
+| `backend/embeddings.py` | ✅ | `build_summary`, `embed` (normalised, 384-dim), `to_pgvector`. |
+| `backend/backfill_embeddings.py` | ✅ | Fills missing embeddings; `--all` rebuilds every row. |
+| `backend/seed_transactions.py` | ✅ | Loads 2,440 real `fraudTest.csv` transactions (40 cards, 207 fraud) through the API. |
+| `backend/migrations/001_add_embeddings.sql` | ✅ | Adds pgvector columns + HNSW index to an older database. |
 | `backend/schema.sql` | ✅ | `transactions` + `risk_scores` tables, constraints, indexes. |
 | `docker-compose.yml` | ✅ | Local Postgres 16 on port 5433. Runs `schema.sql` on first start. |
 | `frontend/` | ⬜ | Empty folder. |
@@ -46,8 +50,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 | # | Task | Status |
 |---|---|---|
-| C7 | MongoDB Atlas vector index (384-dim, cosine), embed summaries on each insert | ⬜ |
-| C8 | `POST /ask`: top 8-10 vector hits + Postgres aggregate + Claude, grounded answers with transaction IDs | ⬜ |
+| C7 | pgvector: `embedding vector(384)` + HNSW cosine index; embed a summary of each transaction in the same DB transaction as the insert; backfill script for existing rows | ✅ 2,440 seeded, all embedded |
+| C8 | `POST /ask`: top 8-10 vector hits + SQL aggregate + Claude, grounded answers with transaction IDs | ⬜ |
 
 ## Phase D: Frontend
 
@@ -65,6 +69,9 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 Add one line every time something moves.
 
+- **2026-10-17:** C7 done. Seeded 2,440 transactions through the API (all 201). Every row is embedded. The high band holds 110 of 129 actual fraud; overall the model caught 164 of 207 fraud as medium/high. Vector search works, but merchant names dominate similarity (journal §17).
+- **2026-10-17:** C7 code written: summaries + embeddings saved in the same DB transaction as the score, plus backfill and seed scripts. The DB was recreated on the pgvector image after a collation mismatch (test data only). Installed sentence-transformers 6.1.0, torch 2.14.1 and anthropic 1.15.0 (after a network dropout).
+- **2026-10-17:** Decision change: MongoDB Atlas → **pgvector** for vector search (journal §16).
 - **2026-10-17:** B6 done, so **Phase B is complete**. End-to-end test via curl: 4 transactions scored low/low/medium/high with correct reasons, a duplicate gave 409, a negative amount gave 422, and the DB holds exactly 4 scored rows with clean merchant names and model version `c8b8b28efe16`.
 - **2026-10-17:** B5 done; B6 code written. The reduced history query matched full-history scores on 300 real transactions (0 differences).
 - **2026-10-17:** B4 done. The old Supabase DB no longer exists, so we switched `.env` to local Docker Postgres (port 5433; Homebrew Postgres already uses 5432). Freed disk space first, since the Mac had 188 MB left. Tested: the API insert works, the constraints reject bad scores/levels/orphan rows/duplicate IDs, and card-history lookups use the index.

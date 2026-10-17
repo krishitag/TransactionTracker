@@ -19,7 +19,7 @@ Each entry has:
 3. We look up that card's recent history and compute 4 **features** (numbers that describe the transaction).
 4. A trained **Logistic Regression** model turns those features into a fraud probability.
 5. We save the score and the top reasons in a `risk_scores` table.
-6. We also turn the transaction into a short text summary, convert it to an **embedding** (a list of 384 numbers that captures its meaning), and store it in **MongoDB Atlas**.
+6. We also turn the transaction into a short text summary, convert it to an **embedding** (a list of 384 numbers that captures its meaning), and store it in Postgres using the **pgvector** extension.
 7. `POST /ask` finds the most relevant transactions by meaning, adds some hard numbers from Postgres, and asks **Claude** to answer using only that data.
 8. A **Next.js dashboard** shows all of this.
 
@@ -106,15 +106,17 @@ A **feature** is a number that describes a transaction in a way that helps tell 
 
 ---
 
-## 6. Storage: why two databases?
+## 6. Storage: one database (Postgres + pgvector)
+
+> Originally the plan was two databases (Postgres + MongoDB Atlas). We switched to one; see section 16 for why.
 
 **Postgres (SQL):** stores the transactions and risk scores. It's good for exact, structured questions ("count high-risk transactions per merchant"). Runs locally in Docker during development.
 
-**MongoDB Atlas Vector Search:** stores embeddings of transaction summaries. It's good for "find transactions *similar in meaning* to this question". We picked it over Pinecone because Atlas does both normal documents and vector search, so it's one less service to manage.
+**pgvector (a Postgres extension):** adds a `vector` column type, so embeddings of transaction summaries live in the same database. It's good for "find transactions *similar in meaning* to this question", and it can be combined with normal SQL filters in one query.
 
 **Embeddings:** made locally with `sentence-transformers` (`all-MiniLM-L6-v2`), which turns text into 384 numbers. It's free and runs on my machine, so there are no API costs.
 
-**Interview line:** "Postgres is the source of truth for structured queries, and MongoDB Atlas holds the vector embeddings for semantic search. I picked Atlas over Pinecone to keep the number of services down."
+**Interview line:** "Postgres is the single source of truth. With pgvector, the embeddings live next to the data they describe, so I get semantic search and SQL in one place with no sync problem."
 
 ---
 
@@ -127,7 +129,7 @@ A **feature** is a number that describes a transaction in a way that helps tell 
 - For comparison questions ("which category is riskiest?"), also pull a small **aggregate** from Postgres (real counts and averages), because similarity search alone can't do maths over the whole table.
 - The prompt tells Claude to **cite transaction IDs and never invent numbers** (we call this "grounding").
 
-**Interview line:** "The /ask endpoint does vector search for the top 8-10 transactions, adds a SQL aggregate for comparison questions, and uses a grounding-only prompt so the LLM cites transaction IDs instead of making up numbers."
+**Interview line:** "The /ask endpoint does pgvector similarity search for the top 8-10 transactions, adds a SQL aggregate for comparison questions, and uses a grounding-only prompt so the LLM cites transaction IDs instead of making up numbers."
 
 ---
 
@@ -138,7 +140,7 @@ A **feature** is a number that describes a transaction in a way that helps tell 
 | API | FastAPI | Fast, typed with Pydantic, auto-generated docs |
 | ML | scikit-learn | Standard, simple, interpretable |
 | SQL DB | Postgres (Docker locally) | Reliable, industry standard |
-| Vector DB | MongoDB Atlas | Vectors and documents in one service |
+| Vector search | pgvector (inside Postgres) | No extra service; atomic writes; SQL + vector in one query |
 | LLM | Claude API | Answer generation for RAG |
 | Frontend | Next.js + Tailwind + shadcn/ui | Modern, quick to build a clean dashboard |
 | CI | GitHub Actions | Lint + tests on every push |
@@ -384,6 +386,104 @@ The database held exactly 4 scored rows: the failed requests saved nothing, and 
 
 ---
 
+## 16. Decision change: MongoDB Atlas → pgvector
+
+**What:** the original plan stored embeddings in MongoDB Atlas. Before building it, we switched to **pgvector**, a Postgres extension that adds a `vector` column type and similarity search.
+
+**Why we switched:**
+
+| | MongoDB Atlas | pgvector |
+|---|---|---|
+| Extra service | Yes (account, IP allowlist, second connection string) | No. It's the Postgres we already run |
+| Consistency | Two databases can disagree if one write fails, so you need a backfill/sync job | Transaction + score + embedding saved in **one** DB transaction, all or nothing |
+| Filtered search | Vector search in Mongo, filters/joins in Postgres | One SQL query: `WHERE risk_level = 'high' ORDER BY embedding <=> :q LIMIT 10` |
+| Deployment | Atlas + Render | Render Postgres supports pgvector |
+| Scale limit | Built for very large vector sets | Comfortably millions of rows; we have thousands |
+
+The original reason for Atlas was "one less service than Pinecone". pgvector is **one less service than Atlas**.
+
+**Why this suits a payments company:** transaction data is relational (it needs constraints, foreign keys and ACID). Adding vector search to the existing relational store, instead of adding a new database, is a common industry pattern. It's supported on AWS RDS/Aurora, Google Cloud SQL, Supabase and Neon.
+
+**When I'd pick a separate vector database:** hundreds of millions of vectors, a search workload that needs to scale separately from the transactional DB, or a team that already runs one.
+
+**How the vector index works (HNSW):** comparing a question with every row would be slow at scale. **HNSW** (Hierarchical Navigable Small World) builds a graph where each vector links to its near neighbours, so a search hops through the graph toward the closest matches instead of checking everything. It's *approximate*, very occasionally missing a true top match, in exchange for being much faster. We use **cosine distance** (`vector_cosine_ops`), which compares the *direction* of embeddings, i.e. their meaning, rather than their length.
+
+**A gotcha from switching images: collation mismatch.** After moving the existing database from the `postgres:16` image to `pgvector/pgvector:pg16`, Postgres warned *"collation version mismatch (2.41 vs 2.36)"*.
+- A **collation** is the set of rules for sorting text (does "apple" come before "Banana"?). Postgres gets them from the OS library (glibc) inside the container.
+- The two images are built on different Linux versions, so their sorting rules can differ.
+- Text indexes (like the `trans_num` uniqueness check) store values **in sorted order**. If the rules change underneath them, lookups can miss rows.
+- **What we did:** the DB only had 4 test rows, so we recreated it (`docker compose down -v`, then `up -d`). That also proved a fresh install from `schema.sql` works with pgvector.
+- **What you'd do in production, keeping the data:** `REINDEX DATABASE risk;` then `ALTER DATABASE risk REFRESH COLLATION VERSION;`. Better still, pin exact image versions so the OS underneath never changes unexpectedly.
+
+**Interview line:** "I originally planned MongoDB Atlas for vector search, then switched to pgvector. Keeping embeddings in the same Postgres as the transactions made writes atomic, removed a sync problem and a service, and let me combine similarity search with SQL filters in a single query. At our scale pgvector is plenty. I'd revisit a dedicated vector store at hundreds of millions of vectors."
+
+---
+
+## 17. Task C7: summaries and embeddings
+
+**What happens now on every `POST /transactions`** (inside the same all-or-nothing DB transaction as before):
+1. Score the transaction (unchanged).
+2. **Write a one-sentence summary**, the way a person would describe it:
+   > "HIGH risk (score 1.00): $899.99 online shopping purchase at Shiny Electronics on Sunday 21 Jun 2020 at 12:30 (afternoon), card ending 3333. Reasons: Amount $899.99 is about 13x the typical transaction ($70); 3 other transactions on this card in the past hour."
+3. **Embed it**: `all-MiniLM-L6-v2` turns the sentence into 384 numbers.
+4. **Save** the summary and embedding in `risk_scores` with the score.
+
+**Choices and why:**
+- **Readable categories.** `shopping_net` becomes "online shopping". The embedding model understands English, not dataset codes, so a question about "online shopping" should land near these summaries.
+- **Day and time of day in the text** ("Sunday … afternoon", "late night"), so time-flavoured questions have something to match.
+- **Only the last 4 card digits** in the text, like a receipt. Full card numbers don't belong in free text.
+- **Normalised vectors** (length exactly 1). Cosine distance then compares only *direction*, i.e. meaning, and the maths gets simpler.
+- **No extra library to store vectors.** pgvector accepts text like `'[0.12,-0.03,…]'` with `::vector`, so a tiny `to_pgvector()` helper is enough.
+- **The model loads once, at startup.** Loading takes seconds and encoding takes milliseconds, so loading per request would be wasteful.
+- **One `build_summary()`** is used by both the API and the backfill script, so summaries are always written the same way. Same principle as the shared `features.py`.
+
+**Sanity check (before touching the database):** 4 test summaries, 5 questions.
+
+| Question | Best match | Similarity |
+|---|---|---|
+| "suspicious online electronics purchase" | the $900 electronics (high) | 0.45 |
+| "normal grocery shopping" | the $45 grocery (low) | 0.36 |
+| "expensive flight or trip" | the $1,200 travel (high) | **0.52**, though "flight" and "trip" never appear |
+| "card used many times in quick succession" | the 2-in-an-hour gas purchase | 0.30 |
+| "transactions in the middle of the night" | the 2:15 am gas purchase | 0.21 (barely ahead of a tie) |
+
+**Lesson: embeddings are great at "what is this about" and weak at precise facts** (exact times, counts, amounts, "the most"). That's why `/ask` (C8) combines **vector search** (find relevant examples) with **SQL** (precise filters and counts). Using both is called **hybrid retrieval**.
+
+**Helper scripts:**
+- `backfill_embeddings.py` embeds any rows missing an embedding, in batches of 256. `--all` re-embeds everything, e.g. after changing the summary wording. Because Postgres is the source of truth, embeddings can always be rebuilt from it.
+- `seed_transactions.py` sends **2,440 real transactions** from `fraudTest.csv` (40 cards, 207 fraud) through the real API in time order, so each card builds history naturally. It's safe to re-run, since duplicates return 409 and are skipped.
+  - ⚠️ **The seed is deliberately fraud-heavy (~8.5% vs the real 0.58%)** so the demo has enough fraud to explore. Never quote it as the real fraud rate.
+
+**Results after seeding (2,440 transactions, all returned 201, all embedded):**
+
+| Risk level | Transactions | Actually fraud |
+|---|---|---|
+| high | 129 | **110** (85%) |
+| medium | 324 | 54 |
+| low | 1,987 | 43 (missed) |
+
+- Of the 207 frauds, 110 (53%) landed in **high**, the same 53% recall we measured on the test set at the 0.9 cutoff (section 11). The model behaves consistently on new data.
+- 164 of 207 (79%) were flagged medium or high. 43 slipped through as low.
+- ⚠️ **"85% of high-risk are fraud" is inflated by the fraud-heavy seed.** At the real 0.58% fraud rate, precision at this cutoff was about 23% (section 11). Precision depends on how common fraud is, but recall doesn't. That's a classic trap worth knowing.
+
+**First vector search ("5 most similar to this fraud"):**
+
+| Distance | Summary |
+|---|---|
+| 0.000 | HIGH: $1,159.89 online shopping at Labadie, Treutel and Bode (the fraud itself) |
+| **0.027** | **LOW: $91.11 online shopping at Labadie, Treutel and Bode** |
+| 0.238 | HIGH: $874.71 in-store shopping at Baumbach, Hodkiewicz and Walsh |
+| 0.251 | HIGH: $880.31 online shopping at Heathcote, Yost and Kertzmann |
+| 0.252 | MEDIUM: $246.65 online misc at Parisian, Schiller and Altenwerth |
+
+**The surprise: the closest match is a *low-risk* $91 purchase**, because it's at the same merchant. The long, distinctive merchant name dominates the embedding more than "HIGH" vs "LOW" or $1,160 vs $91. Results 3 to 5 do show the model finding other big, high-risk shopping purchases at different merchants, which is real semantic similarity.
+
+**What this teaches:** embeddings capture *what a text is about* (merchant, category), not *which facts matter most to us* (risk level, amount). So when a question says "high-risk", we must **filter with SQL** (`WHERE risk_level = 'high'`) and then rank by similarity. This is the main practical reason for pgvector: filtering and ranking happen in one query.
+
+**Interview line:** "On ingest, each transaction gets a natural-language summary embedded with MiniLM and stored in pgvector in the same transaction as its risk score, so search data can never drift from the source. I verified that semantic matching works, and also saw where it doesn't: precise filters like time or counts. That's why the question-answering layer uses hybrid retrieval, vector search for relevance plus SQL for exact facts."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -412,3 +512,10 @@ The database held exactly 4 scored rows: the failed requests saved nothing, and 
 | 2026-10-17 | Insert + score + score-write in one DB transaction | Never leave a transaction unscored |
 | 2026-10-17 | Fetch only last-hour + first-same-merchant history | Same features as full history, fast at any scale |
 | 2026-10-17 | Model version = SHA-256 prefix of the model file | Trace every score to the model that produced it |
+| 2026-10-17 | **Switch MongoDB Atlas → pgvector** (supersedes the Sep 2026 Atlas decision) | Atomic writes, SQL + vector in one query, one less service |
+| 2026-10-17 | Don't commit the full dataset; commit a small sample later for CI tests | GitHub rejects files over 100 MB; Kaggle link in README |
+| 2026-10-17 | Recreated the DB on the pgvector image (test data only) | Collation mismatch between images; prod fix would be REINDEX + REFRESH COLLATION VERSION |
+| 2026-10-17 | Human-readable summaries (categories in words, day/time, last 4 digits) | The embedding model understands language, not codes |
+| 2026-10-17 | Embedding in the same DB transaction; backfill script as fallback | Search data never drifts from source; rebuildable |
+| 2026-10-17 | Hybrid retrieval for /ask (vector + SQL) | Embeddings are weak at exact facts (times, counts) |
+| 2026-10-17 | Fraud-heavy demo seed (~8.5%) | Enough fraud examples to explore; not the real rate |
