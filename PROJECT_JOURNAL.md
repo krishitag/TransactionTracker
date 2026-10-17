@@ -637,7 +637,8 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 - **Validation before SQL:** `risk_level` is typed as `Literal["high","medium","low"]`, so anything else returns 422 automatically. `limit` is capped at 1–100, so nobody can request a million rows at once.
 - **Pagination with `LIMIT/OFFSET` + `count(*) OVER ()`.** A **window function** adds the total match count to every row, so one query returns both the page and the total. *Known limitation:* OFFSET gets slower deep into large tables. At scale you'd use **keyset pagination** ("rows older than the last one I saw").
 - **Every read runs in a `READ ONLY` transaction** through one helper (`read_rows`), so these endpoints can't change data even by mistake.
-- **CORS only for the known frontend origin** (`http://localhost:3000`, configurable with `FRONTEND_ORIGINS`), not `*`. Browsers block a page on one origin from reading another origin's responses unless the server allows it. That's the **same-origin policy**, and CORS is the server saying who's allowed.
+- **CORS only for the known frontend origin** (`http://localhost:3100`, configurable with `FRONTEND_ORIGINS`), not `*`. Browsers block a page on one origin from reading another origin's responses unless the server allows it. That's the **same-origin policy**, and CORS is the server saying who's allowed.
+  - **Real bug this caught:** another Next.js project was already on port 3000, so the dashboard silently started on 3001. That would have been blocked by CORS, while the *other* app would have been allowed. Fix: pin the dashboard to its own port (`next dev -p 3100`) and allow exactly that origin. Lesson: an origin is scheme + host + **port**, so `localhost:3000` and `localhost:3001` are different origins.
 
 **Tested:** stats 2,440 / 141 / 113 / 2,186; filtered page `total: 141` with `card_last4` only; #660 found; unknown ID → 404; `risk_level=extreme` → 422.
 
@@ -661,6 +662,37 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 - Every text colour pair was measured against WCAG AA (≥ 4.5:1); the lowest is 4.8:1.
 
 **Interview line:** "Before writing any UI I wrote a DESIGN.md with tokens and rules, reconciled two design sources into one documented set of decisions, checked contrast numerically, and kept risk status readable without relying on colour."
+
+---
+
+## 22. Task D9b: the dashboard
+
+**Stack:** Next.js 16.4 (App Router), React 19, Tailwind 4, TypeScript. No component library, no data-fetching library. Next.js 16 ships an `AGENTS.md` warning that its APIs differ from older versions, so the bundled docs were read before writing code.
+
+**How it's built:**
+- `globals.css` turns DESIGN.md into Tailwind theme tokens (`bg-accent`, `text-risk-high`, `text-display`, …). Components never use raw colours.
+- `lib/api.ts` is a typed client for the FastAPI endpoints. The API URL comes from `NEXT_PUBLIC_API_URL`; the `NEXT_PUBLIC_` prefix is what lets a setting reach the browser.
+- Data loads **in the browser** with `fetch` + React state. Every request has an `AbortController`, so a slow old response can't overwrite a newer one when you click filters quickly.
+- **The stat band is the filter.** The four big numbers are buttons (`aria-pressed`): one control instead of tiles plus filter buttons.
+- **The LLM answer is rendered safely.** A tiny renderer handles bold, bullets, headings and `[#id]` citations as React elements, never `innerHTML`, so text from the data can't inject a script. Citations become buttons only if the backend confirmed that ID.
+- **Phone layout:** the Time column folds under the merchant name and "Why?" moves under the badge, so the Risk column is never cut off.
+
+**Checked with all four tools:**
+| Tool | Result |
+|---|---|
+| tasteskill `lint.mjs` | 0 FAIL (1 defended WARN: Inter, chosen in DESIGN.md) |
+| tasteskill `inspect.mjs` (1440 / 768 / 390px) | 0 FAIL, 0 WARN with the documented dashboard exceptions (no photos, no scroll motion, no hero, no video) |
+| playwright-cli | Clicked filters, rows, pagination and the ask panel at desktop + phone size; screenshots reviewed |
+| Vercel web-design-guidelines | Fixed: skip link, theme colour, balanced headings, `translate="no"` on names/IDs, textarea name/autocomplete, placeholder `…`, submit enabled until the request starts, clearer citation labels, touch-action, error messages with a next step. Deliberately not followed: Title Case (we use sentence case, per DESIGN.md/tasteskill). Backlog: filters in the URL |
+
+**Bugs found while checking (good interview stories):**
+1. **Port clash → CORS.** Another Next.js app was on port 3000, so the dashboard silently started on 3001 and every API call was blocked by CORS. Fix: pin the dashboard to port 3100 and allow exactly that origin. An origin includes the port.
+2. **Stale CSS.** The dev server kept an old compiled `globals.css`, so no colours rendered. Fix: delete the `.next` build cache and restart.
+3. **Phone table hid the Risk column.** Fix: a separate phone composition (fold columns), not just "make it scroll".
+4. **Taste's body-size check** counted only sentences of 60+ characters. Our explanatory lines were 13px grey captions, so the fix was to set the page's real prose at 16px in darker ink.
+5. **`/ask` hung forever, caused by broken IPv6 on the network.** DNS returned IPv6 addresses first, IPv6 didn't actually route, and Python tried each dead address in turn (browsers and curl race IPv4/IPv6, which is why nothing else looked broken). Found by dumping a Python traceback after 20 seconds: it was stuck in `socket.create_connection`. Fix: the Gemini client binds to IPv4 with a 5s connect / 45s total timeout and 2 attempts, and the frontend aborts after 60s with a clear message. *Lesson: every call to an external service needs a timeout, or one bad dependency freezes your feature.*
+
+**Interview line:** "The dashboard is a typed Next.js client over the FastAPI endpoints, styled only through design tokens, with abortable requests and a safe renderer for LLM output. I verified it with a lint, a real-browser design inspector at three screen sizes, browser automation and an accessibility audit, which caught five real bugs, including an IPv6 network issue that made the AI endpoint hang until I added timeouts."
 
 ---
 
@@ -714,3 +746,7 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 | 2026-10-17 | One `DESIGN.md` for dashboard + showcase: Stripe-inspired structure, blue palette, tasteskill house rules | Consistency across surfaces; no purple (my choice) |
 | 2026-10-17 | tasteskill in full on the showcase page; house rules (with 2 documented exceptions) on the dashboard | The skill is scoped to public pages, not app screens |
 | 2026-10-17 | Risk badges keep red/amber/blue-grey with the word | Severity must be readable without colour alone |
+| 2026-10-17 | No shadcn/ui; plain Tailwind with DESIGN.md tokens | Its defaults (borders, shadows) conflict with DESIGN.md; fewer dependencies |
+| 2026-10-17 | Dashboard on port 3100; CORS allows exactly that origin | Port 3000 is used by another local project |
+| 2026-10-17 | Gemini client: IPv4 only, 5s connect / 45s total timeout, 2 attempts; frontend 60s abort | Broken IPv6 made /ask hang; every external call needs a timeout |
+| 2026-10-17 | Sentence case (not Title Case) for buttons/headings | Consistency with DESIGN.md + tasteskill |

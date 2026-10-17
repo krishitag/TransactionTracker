@@ -90,8 +90,8 @@ Each conflict was decided once and applies to **both** surfaces.
 - **Header band** on `navy-900`: product name, model version, nothing else.
 - **Stat band** on `canvas-blue`: total, high, medium, low as large `display-lg` figures with `tnum`.
   High's figure in `risk-high`; the rest in `ink`.
-- **Transactions table** on `canvas`: real `<table>`, hairline row separators, `table` type, `tnum`
-  amounts right-aligned. Risk badge = pill, wash ground + status colour text + the word.
+- **Transactions table**: real `<table>`, rows separated by alternating tone (`canvas` /
+  `canvas-soft`, hover `canvas-blue`), not lines; `table` type, `tnum` amounts right-aligned. Risk badge = pill, wash ground + status colour text + the word.
   Row expands to show the reasons (plain list in `body`).
 - **Filters**: pill buttons; the active one on `accent-wash` with `accent` text.
 - **Ask panel** on `canvas-soft`: text input + one `accent` pill button. Answer on `accent-wash`.

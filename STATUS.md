@@ -7,13 +7,15 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 ## Right now
 
 - **Current phase:** Phase C done → Phase D (frontend)
-- **Next task:** D9b. Scaffold Next.js (you), then I build the dashboard following `DESIGN.md`. After that: the showcase page with tasteskill.
+- **Next task:** your manual test of the dashboard + ask panel at http://localhost:3100, then the showcase page with tasteskill.
+- **Run it:** `docker compose up -d` (repo root) · `venv/bin/uvicorn main:app` (backend/) · `npm run dev` (frontend/, port **3100**)
 - Frontend tools installed: tasteskill (`design-taste-frontend`), `web-design-guidelines`, `playwright-cli` (uses your Chrome). Design system: `DESIGN.md` (blue). Disk ~1.7 GB free.
 - **Improvement backlog:**
   1. ~~Time-of-day + category keyword filters for /ask~~ ✅
   2. ~~Night-time feature + retrain~~ ✅ (model v2, journal §19)
   3. ~~Readable category names in /ask statistics~~ ✅
   4. Daytime-fraud recall dropped with v2: try per-card hour baselines or a tree model (later)
+  5. Dashboard filter + page in the URL (deep links), flagged by the Vercel audit; needs useSearchParams + Suspense under Next 16 cacheComponents
 - **Blockers:** none
 - **To start the database:** `docker compose up -d` from the repo root (Postgres 16 on port **5433**)
 
@@ -65,8 +67,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 | # | Task | Status |
 |---|---|---|
-| D9a | Backend for the dashboard: `GET /stats`, `GET /transactions` (filter + pagination), `GET /transactions/{id}`, CORS for localhost:3000 | ✅ |
-| D9b | Next.js dashboard: stat tiles, transaction table with risk badges and reasons, chat panel | ⬜ waiting on plugin choice |
+| D9a | Backend for the dashboard: `GET /stats`, `GET /transactions` (filter + pagination), `GET /transactions/{id}`, CORS for the dashboard origin (localhost:3100) | ✅ |
+| D9b | Next.js dashboard: stat band (doubles as filter), transaction table with risk badges and reasons, ask panel with clickable citations | 🟡 built and checked (tsc, ESLint, tasteskill lint + inspector 0/0, Vercel guidelines audit fixed, playwright desktop + phone); your manual RAG test pending |
 
 ## Phase E: Ship
 
@@ -78,6 +80,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 Add one line every time something moves.
 
+- **2026-10-17:** D9b built: Next.js 16 dashboard following DESIGN.md. Found and fixed: a port clash with another local app (dashboard pinned to 3100, CORS updated), a stale CSS cache, a phone layout hiding the Risk column, and `/ask` hanging on a network with broken IPv6 (Gemini client now IPv4 + strict timeouts; frontend 60s safety net).
 - **2026-10-17:** D9a done: read endpoints + CORS, all tested (stats, filtered page, single transaction, 404, 422).
 - **2026-10-17:** Re-seeded with v2 (all 2,440 scored by `f683e347ae3d`). High: 141 alerts, 126 fraud; total alerts 453 → 254; fraud missed 43 → 53. /ask late-night online shopping question now filters correctly (7 valid citations).
 - **2026-10-17:** Model v2: added `night_time` (22:00–03:59). PR-AUC 0.21 → 0.285; at 0.9 alerts −22%, precision 22.9% → 32.9%, recall 53.1% → 59.8%; daytime recall fell 54.6% → 48.5% (documented). Medium band moved 0.5 → 0.7. /ask gained time and category filters with a fallback, plus readable category names. "Late night" redefined as 22:00–04:00 everywhere.

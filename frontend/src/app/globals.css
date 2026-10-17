@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* Tokens from ../../DESIGN.md. Components use these names only, never raw hex values. */
+@theme {
+  --color-accent: #0b5fd3;
+  --color-accent-press: #084aa6;
+  --color-accent-soft: #3d82e6;
+  --color-accent-wash: #e6effc;
+  --color-navy-900: #0a1f3d;
+  --color-ink: #0d253d;
+  --color-ink-secondary: #273951;
+  --color-ink-mute: #5b6b80;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #f5f8fc;
+  --color-canvas-blue: #eaf1fb;
+  --color-hairline: #e3e8ee;
+  --color-risk-high: #c8102e;
+  --color-risk-high-wash: #fdecef;
+  --color-risk-medium: #8a5a12;
+  --color-risk-medium-wash: #fbf1e1;
+  --color-risk-low: #3f5873;
+  --color-risk-low-wash: #eef2f7;
+
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+
+  /* The five type sizes DESIGN.md allows. */
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.0625rem;
+  --text-heading: 1.375rem;
+  --text-heading--line-height: 1.2;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+  --text-table: 0.875rem;
+  --text-table--line-height: 1.4;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.4;
+}
+
+html {
+  color-scheme: light;
+  -webkit-tap-highlight-color: var(--color-accent-wash);
+}
+
+/* No double-tap zoom delay on controls. */
+a,
+button,
+textarea {
+  touch-action: manipulation;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-feature-settings: "ss01";
+}
+
+/* Visible focus on every control (DESIGN.md accessibility). */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
