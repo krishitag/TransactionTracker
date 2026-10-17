@@ -31,7 +31,7 @@ export default function AskPanel() {
     const text = q.trim();
     if (pending) return;
     if (text.length < 3) {
-      setError("Type a question of at least 3 characters, or pick an example below.");
+      setError("Type a question of at least 3 characters, or pick one of the examples above.");
       return;
     }
     controller.current?.abort();
@@ -117,7 +117,8 @@ export default function AskPanel() {
         </button>
       </form>
 
-      {!result && !pending && !error && (
+      {/* Kept visible next to an error too: the error text points to these examples. */}
+      {!result && !pending && (
         <div className="flex flex-col gap-2">
           <p className="text-caption text-ink-mute">Try one of these:</p>
           {EXAMPLES.map((q) => (

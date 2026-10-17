@@ -696,6 +696,73 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 
 ---
 
+## 23. Manual test: the ask panel timeout, and a backup Gemini key
+
+**What happened:** the dashboard, filters, table and reasons all passed my manual test. But asking a question showed *"No answer after 60 seconds"*. Calling `/ask` directly (without the browser) took **89 seconds** and returned **Gemini 504 "Deadline expired"**. A tiny "reply OK" test then got **429 rate limit**. So Google's free-tier model was overloaded and my quota was hit. That part was Google's side, not our code or network.
+
+**The bug in our code: the timeout budgets were in the wrong order.** The browser gave up at 60s, but the backend allowed Gemini 45s × 2 attempts, which is about 90s. The backend's clear error ("rate limit", "overloaded") arrived after the browser had already stopped listening, so I only ever saw a vague timeout.
+- **Rule:** timeouts must *shrink* as you go deeper. Browser 60s → backend 50s total → each Gemini call 40s. The inner layer always fails first, so its specific error reaches the user.
+- **No automatic retry of a slow call.** Retrying a request that just took 40s to fail doubles the wait and spends more quota, during exactly the moment the service is struggling.
+
+**Backup key (`GEMINI_API_KEY_2`, optional):**
+- Used **only on 429 (rate limit)**. A 429 comes back quickly, so there's time to try again. It is **not** used on 503/504/timeouts: those mean Google's model is overloaded for everyone, so another key hits the same servers. In that case the message is "Gemini is overloaded right now; try again in a minute."
+- **Quota is per Google project, not per key.** A second key in the same project shares the limit and would be useless. It has to come from a different project.
+- A rate-limited key is **moved to the back for 60 seconds** (a simple *cooldown*), so the next question goes straight to the working key instead of wasting a call.
+- The backup is only started if **at least 15s of the 50s budget** is left.
+- Logs say "key 1" / "key 2", never the key itself.
+- With no second key, the behaviour is the same as before (minus the retry).
+- Later generalised to up to 5 keys (`GEMINI_API_KEY_2` … `_5`), tried in order on 429 only; the same 50s budget still caps the total time.
+
+**Tested:** 10 offline tests with fake Gemini responses (no real API calls): key 1 works; 429 → key 2; both limited; 504 and timeout don't switch keys; a bad key 2 is named correctly; no keys; the cooldown skips key 1 on the next question; no backup when the budget is nearly used up.
+
+**Then: thinking level LOW, and logging every failure.** Two more questions failed with 502 and no rate-limit lines, so the model was too slow, not over quota. `gemini-3.8-flash` "thinks" (reasons internally) before answering, by default at length. Our questions are summaries of data we already retrieved, so deep reasoning adds time, not accuracy, and when Google is busy that time crosses our 40s limit. We now set `thinking_level=low` (configurable with `GEMINI_THINKING`). We also log every call's outcome with the error code and seconds taken (`Gemini key 1 failed: 504 after 40.1s`), because we'd been guessing which failure it was. *Lesson: when debugging a dependency, log what it returned and how long it took, so you measure instead of guessing.*
+
+**Answers checked against SQL during the test:**
+- *Late-night online shopping:* every statistic and all 8 cited transactions correct.
+- *Mumbai (trap):* correctly declined, because we store coordinates, not city names.
+- *Large travel purchases at night:* correct but hedged ("can't rule it out"). SQL shows all 14 late-night travel transactions are $1.11–$9.12. The model only saw 10 of them and had no amount statistics for that group, so being cautious was right. The fix is better statistics (backlog 6), not a different prompt.
+
+**Model blind spot found by asking questions: small-amount fraud.** 4 of the 5 largest late-night travel transactions were confirmed fraud, and most were scored Low. Across the whole seed:
+
+| Fraud amount | Fraud | Scored Low | Scored High |
+|---|---|---|---|
+| $100+ | 159 | 13 | 125 |
+| $20–99 | 11 | 7 | 1 |
+| under $20 | 37 | **33** | 0 |
+
+33 of the 53 missed frauds are under $20. The model's strongest signal is "amount far above normal", so small frauds look harmless. In real payments these are often **card testing**: a tiny charge to check that a stolen card works before a big one. Catching them needs *sequence* features (several small payments in a row, a small payment followed by a large one on the same card), not the amount alone. Logged as backlog 7.
+
+**The rest of the manual test** (error messages, Enter vs Shift+Enter, backend stopped, phone layout at 400px, keyboard and skip link) passed. It found three small UI issues that automated checks missed:
+1. **A gap before the comma after each citation** ("#1945 , #1660"). The button's padding, there for the hover pill, pushed the comma away. Fix: a matching negative margin (`-mx-1 px-1`), so the text sits flush and the hover pill stays.
+2. **A thick focus ring on the citation card after a mouse click.** We move focus to the card on purpose, so screen readers announce it, but it's a target, not a control. Fix: the global focus rule now skips `tabindex="-1"` elements, which are only ever focused by code. Real controls keep their ring.
+3. **An error that pointed to something hidden.** "…or pick an example below" appeared while the examples were hidden. Fix: keep the examples visible next to that error, and say "above", which is where they actually are.
+
+*Lesson: automated checks measure rules (contrast, sizes, focus exists). A human click-through finds things that are technically valid but wrong in context.*
+
+**Limitation:** a backup key only helps with quota, not with Google outages. A real product would use a paid tier, or fall back to a *different provider* (we already have Claude behind `LLM_PROVIDER`).
+
+**Interview line:** "During manual testing the AI answers timed out. I traced it by calling the API directly: the LLM provider was returning 504s and 429s, but my backend's retries outlasted the browser's timeout, so users saw a generic error instead of the real one. I reordered the timeout budgets so each inner layer fails first, removed retries on slow failures, and added a backup key that's used only for rate limits, with a cooldown, because overload errors wouldn't be fixed by switching keys."
+
+---
+
+## 24. Task D9c plan: the project showcase page
+
+**What:** a public page that explains the project to recruiters in 30 seconds and sends them to the live dashboard or the repo. It's built with the full tasteskill run, inside the DESIGN.md palette and Inter (`--keep palette,type`).
+
+**Direction:** tasteskill dealt three options; I chose **"The printed annual"** (`editorial-report`, seed 1360379183). This project is a set of findings (night-time fraud, blind spots, verified answers), and a report layout gives findings weight. The other options were type-only (too thin for a technical project) and "dressed as another category" (a gimmick for a fraud tool).
+
+**Idea:** the model's own plain-English reasons become the report's margin notes. They sit in the narrow zone left of a fixed 42% axis: real reasons, real transaction IDs, real numbers. *Competitor test:* another fraud project can't reuse it, because the content only exists in this system.
+
+**Live thing: "score a payment yourself".** The v2 model's weights are exported to JSON, and the browser repeats `scoring.py`'s maths, so it works without the backend. It will be tested against Python on real rows to show the scores are identical.
+
+**Sections:** hero (two-by-two board), one transaction in three states, call and response (payment → score, question → cited answer, Mumbai trap → declined), two key figures (84.7% night fraud, PR-AUC 0.285 vs 0.006), the live scorer, about + honest limitations, footer wordmark.
+
+**Decisions:** showcase at `/`, dashboard at `/dashboard` (recruiters land on the explanation first). Name "Transaction Risk Platform", set on two lines (tasteskill's two-line headline rule). A real portrait in the about section. Footer: GitHub, email, LinkedIn. DESIGN.md gains two larger display sizes for the showcase only.
+
+**Interview line:** "For the showcase I used a design process that deals researched layout directions instead of my defaults, and picked the one that fit the content. The page's interactive part runs my real model in the browser, verified against the Python scorer, so a visitor can change a payment and see the risk score and the reasons change."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -750,3 +817,8 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 | 2026-10-17 | Dashboard on port 3100; CORS allows exactly that origin | Port 3000 is used by another local project |
 | 2026-10-17 | Gemini client: IPv4 only, 5s connect / 45s total timeout, 2 attempts; frontend 60s abort | Broken IPv6 made /ask hang; every external call needs a timeout |
 | 2026-10-17 | Sentence case (not Title Case) for buttons/headings | Consistency with DESIGN.md + tasteskill |
+| 2026-10-17 | Gemini: 1 attempt × 40s, 50s total per question (supersedes 45s × 2 attempts) | Inner timeouts must fire before the browser's 60s so the real error is shown |
+| 2026-10-17 | Optional backup `GEMINI_API_KEY_2`, only on 429, 60s cooldown; never on 503/504 | Quota is per project; overload isn't fixed by another key |
+| 2026-10-17 | Gemini thinking level LOW by default (`GEMINI_THINKING`) + log code/duration of every call | Grounded summaries don't need deep reasoning; slow thinking caused 504s; measure, don't guess |
+| 2026-10-18 | Showcase: tasteskill `editorial-report` direction, at `/`; dashboard → `/dashboard` | Findings-led content suits a report layout; recruiters land on the explanation first |
+| 2026-10-18 | Showcase live scorer runs exported v2 weights in the browser, tested against `scoring.py` | Works without the backend; proves the explanation is the real model |

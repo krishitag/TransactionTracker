@@ -57,8 +57,13 @@ Next.js dashboard (:3100) ──fetch──▶ FastAPI (:8000) ──▶ Postgre
 - `seed_transactions.py` loads 2,440 real `fraudTest.csv` rows (40 cards, 207 fraud; fraud-heavy on
   purpose) through the API. `backfill_embeddings.py` (`--all` to rebuild). `queries.sql` holds saved
   exploration SQL.
-- `.env` keys: `DATABASE_URL`, `GEMINI_API_KEY`, `LLM_PROVIDER=gemini`, optional `GEMINI_MODEL`
-  (default `gemini-3.8-flash`), `ANTHROPIC_API_KEY`, `FRONTEND_ORIGINS`.
+- `.env` keys: `DATABASE_URL`, `GEMINI_API_KEY`, optional backups `GEMINI_API_KEY_2` … `_5` (each from a
+  **different Google project**; tried in order only on a 429, a limited key goes last for 60s), `LLM_PROVIDER=gemini`,
+  optional `GEMINI_MODEL` (default `gemini-3.8-flash`), `ANTHROPIC_API_KEY`, `FRONTEND_ORIGINS`.
+- Gemini timeout budget: 40s per call, 1 attempt, 50s total per question (backup key needs ≥15s
+  left), always under the frontend's 60s so the real error reaches the UI. 503/504 → "overloaded",
+  no key switch. `GEMINI_THINKING` (minimal/low/medium/high, default **low**) keeps answers fast.
+  Every Gemini call logs `key N … in Xs` or `key N failed: <code> after Xs` (never the key).
 
 ### Frontend (`frontend/`, Next.js 16.4, React 19, Tailwind 4, TypeScript)
 - **Next.js 16 has breaking changes.** Read `frontend/AGENTS.md` and the relevant guide in
@@ -112,8 +117,8 @@ Dashboard at http://localhost:3100. The backend takes ~30s to start (embedding m
 
 ## Next steps
 
-1. User's manual test of the dashboard + ask panel at :3100 (in progress).
-2. Project showcase page with the full tasteskill run, same DESIGN.md tokens.
+1. ~~User's manual test of the dashboard + ask panel~~ done 2026-10-18 (18/18, journal §23).
+2. Project showcase page with the full tasteskill run, same DESIGN.md tokens (D9c).
 3. Phase E: Dockerfile, GitHub Actions (lint + pytest on scoring, small committed data sample for CI),
    README, deploy (Render backend + Postgres with pgvector; Vercel frontend; Render needs
    `FRONTEND_ORIGINS` set to the Vercel URL).

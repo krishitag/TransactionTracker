@@ -55,8 +55,9 @@ body {
   font-feature-settings: "ss01";
 }
 
-/* Visible focus on every control (DESIGN.md accessibility). */
-:focus-visible {
+/* Visible focus on every control (DESIGN.md accessibility). tabindex="-1" elements are
+   focus targets moved to by code (e.g. an opened citation), not controls, so no ring. */
+:focus-visible:not([tabindex="-1"]) {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }

@@ -5,15 +5,26 @@ transactions; a small SQL aggregate supplies exact counts. An LLM (Gemini or
 Claude, chosen by LLM_PROVIDER) answers using only that data and cites
 transaction IDs, which we then verify.
 """
+import logging
 import os
 import re
+import time
 
 from embeddings import CATEGORY_NAMES, embed, to_pgvector
 from features import NIGHT_HOURS
 
 CLAUDE_MODEL = "claude-opus-5-5"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-GEMINI_TIMEOUT_SECONDS = 45.0
+# Timeout budget: the backend must give up before the browser does (60s in AskPanel),
+# so the user sees the real reason instead of a generic browser timeout.
+GEMINI_TIMEOUT_SECONDS = 40.0  # one call, one attempt (retrying a 40s failure doubles the wait)
+GEMINI_BUDGET_SECONDS = 50.0  # all calls for one question together
+GEMINI_MIN_BACKUP_SECONDS = 15.0  # don't start the backup key with less time than this left
+RATE_LIMIT_COOLDOWN_SECONDS = 60.0  # skip a rate-limited key for this long
+# How long Gemini reasons before answering. Our questions are summaries of data we already
+# retrieved, so "low" is enough, and it keeps answers well inside the timeout when Google is busy.
+GEMINI_THINKING = os.getenv("GEMINI_THINKING", "low").strip().lower()
+GEMINI_THINKING_LEVELS = ("minimal", "low", "medium", "high")
 TOP_K = 10
 
 SYSTEM_PROMPT = """You are an analyst assistant for a card-transaction risk platform.
@@ -128,6 +139,9 @@ class LLMUnavailable(Exception):
 
 
 _clients = {}
+_rate_limited_until = {}  # Gemini key slot -> time.monotonic() when it may be tried first again
+# uvicorn's logger, so these lines show in the server terminal.
+log = logging.getLogger("uvicorn.error")
 
 
 def provider():
@@ -250,17 +264,27 @@ def build_prompt(question, context):
     )
 
 
-def call_gemini(prompt):
-    if not os.getenv("GEMINI_API_KEY"):
-        raise LLMNotConfigured("set GEMINI_API_KEY in backend/.env")
-    # Imported here so the app still runs when only the Claude SDK is installed.
-    try:
-        import httpx
-        from google import genai
-        from google.genai import errors, types
-    except ImportError:
-        raise LLMNotConfigured("run: venv/bin/pip install google-genai")
-    if "gemini" not in _clients:
+MAX_GEMINI_KEYS = 5
+
+
+def gemini_key_name(slot):
+    return "GEMINI_API_KEY" if slot == 1 else f"GEMINI_API_KEY_{slot}"
+
+
+def gemini_keys():
+    """(slot, key) pairs: GEMINI_API_KEY is slot 1, optional backups GEMINI_API_KEY_2.._5.
+    Logs only ever name the slot, never the key."""
+    keys = [(slot, os.getenv(gemini_key_name(slot))) for slot in range(1, MAX_GEMINI_KEYS + 1)]
+    return [(slot, key) for slot, key in keys if key]
+
+
+def gemini_client(slot, key):
+    from google import genai
+    from google.genai import types
+    import httpx
+
+    name = f"gemini{slot}"
+    if name not in _clients:
         # IPv4 only, with strict timeouts. Some networks advertise IPv6 without carrying
         # it; Python then waits on each dead IPv6 address in turn and /ask hangs for
         # minutes. Binding to 0.0.0.0 forces IPv4, which every host supports.
@@ -268,32 +292,75 @@ def call_gemini(prompt):
             transport=httpx.HTTPTransport(local_address="0.0.0.0"),
             timeout=httpx.Timeout(GEMINI_TIMEOUT_SECONDS, connect=5.0),
         )
-        _clients["gemini"] = genai.Client(
-            api_key=os.getenv("GEMINI_API_KEY"),
+        _clients[name] = genai.Client(
+            api_key=key,
             http_options=types.HttpOptions(
                 timeout=int(GEMINI_TIMEOUT_SECONDS * 1000),
-                retry_options=types.HttpRetryOptions(attempts=2),
+                retry_options=types.HttpRetryOptions(attempts=1),
                 httpx_client=http_client,
             ),
         )
+    return _clients[name]
+
+
+def call_gemini(prompt):
+    keys = gemini_keys()
+    if not keys:
+        raise LLMNotConfigured("set GEMINI_API_KEY in backend/.env")
+    # Imported here so the app still runs when only the Claude SDK is installed.
     try:
-        response = _clients["gemini"].models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.2),
-        )
-    except httpx.TimeoutException:
-        raise LLMUnavailable(f"Gemini didn't respond within {GEMINI_TIMEOUT_SECONDS:.0f}s; try again")
-    except httpx.TransportError:
-        raise LLMUnavailable("Could not reach the Gemini API; check your connection")
-    except errors.APIError as e:
-        if e.code == 429:
-            raise LLMRateLimited("Gemini rate limit reached (free tier); wait a minute and retry")
-        if e.code in (400, 401, 403) and "API key" in str(e):
-            raise LLMNotConfigured("GEMINI_API_KEY is invalid")
-        raise LLMUnavailable(f"Gemini API error ({e.code}): {e.message}")
-    # .text is None when Gemini blocks the response (e.g. its safety filters).
-    return (response.text or "I can't answer that question.").strip(), GEMINI_MODEL
+        import httpx
+        from google.genai import errors, types
+    except ImportError:
+        raise LLMNotConfigured("run: venv/bin/pip install google-genai")
+    if GEMINI_THINKING not in GEMINI_THINKING_LEVELS:
+        raise LLMNotConfigured(f"GEMINI_THINKING must be one of {', '.join(GEMINI_THINKING_LEVELS)}")
+
+    # Keys that hit their rate limit recently go last, so we don't waste a call on them.
+    now = time.monotonic()
+    keys.sort(key=lambda k: _rate_limited_until.get(k[0], 0) > now)
+    deadline = now + GEMINI_BUDGET_SECONDS
+
+    for i, (slot, key) in enumerate(keys):
+        remaining = deadline - time.monotonic()
+        if i > 0 and remaining < GEMINI_MIN_BACKUP_SECONDS:
+            break
+        timeout = min(GEMINI_TIMEOUT_SECONDS, remaining)
+        started = time.monotonic()
+        try:
+            response = gemini_client(slot, key).models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.2,
+                    thinking_config=types.ThinkingConfig(thinking_level=GEMINI_THINKING.upper()),
+                    http_options=types.HttpOptions(timeout=int(timeout * 1000)),
+                ),
+            )
+        except httpx.TimeoutException:
+            log.warning("Gemini key %d failed: timeout after %.1fs", slot, time.monotonic() - started)
+            raise LLMUnavailable(f"Gemini didn't respond within {timeout:.0f}s; try again in a minute")
+        except httpx.TransportError as e:
+            log.warning("Gemini key %d failed: %s after %.1fs", slot, type(e).__name__, time.monotonic() - started)
+            raise LLMUnavailable("Could not reach the Gemini API; check your connection")
+        except errors.APIError as e:
+            log.warning("Gemini key %d failed: %s after %.1fs", slot, e.code, time.monotonic() - started)
+            if e.code == 429:
+                # Quota is per Google project: only a key from another project can help.
+                _rate_limited_until[slot] = time.monotonic() + RATE_LIMIT_COOLDOWN_SECONDS
+                continue
+            if e.code in (400, 401, 403) and "API key" in str(e):
+                raise LLMNotConfigured(f"{gemini_key_name(slot)} is invalid")
+            if e.code in (503, 504):
+                # The model itself is overloaded; another key would hit the same servers.
+                raise LLMUnavailable("Gemini is overloaded right now; try again in a minute")
+            raise LLMUnavailable(f"Gemini API error ({e.code}): {e.message}")
+        log.info("Gemini answered with key %d in %.1fs (thinking %s)", slot, time.monotonic() - started, GEMINI_THINKING)
+        # .text is None when Gemini blocks the response (e.g. its safety filters).
+        return (response.text or "I can't answer that question.").strip(), GEMINI_MODEL
+
+    raise LLMRateLimited("Gemini rate limit reached (free tier); wait a minute and retry")
 
 
 def call_claude(prompt):

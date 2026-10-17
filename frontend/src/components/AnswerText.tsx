@@ -20,7 +20,7 @@ function renderInline(text: string, onCite: (id: number) => void, validIds: Set<
           type="button"
           onClick={() => onCite(id)}
           aria-label={`Open transaction ${id}`}
-          className="rounded-full px-1 font-medium text-accent tabular-nums hover:bg-canvas hover:text-accent-press"
+          className="-mx-1 rounded-full px-1 font-medium text-accent tabular-nums hover:bg-canvas hover:text-accent-press"
         >
           #{id}
         </button>
