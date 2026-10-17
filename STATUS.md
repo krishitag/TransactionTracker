@@ -6,8 +6,12 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 ## Right now
 
-- **Current phase:** Phase C (RAG)
-- **Next task:** C8, `POST /ask` (hybrid retrieval + Claude)
+- **Current phase:** Phase C done → Phase D (frontend)
+- **Next task:** D9, Next.js dashboard
+- **Improvement backlog (found via /ask, journal §18):**
+  1. Time-of-day + category keyword filters for /ask retrieval
+  2. Add an hour / late-night feature to the model and retrain (65 late-night frauds, only 14 flagged high)
+  3. Readable category names in /ask statistics
 - **Blockers:** none
 - **To start the database:** `docker compose up -d` from the repo root (Postgres 16 on port **5433**)
 
@@ -22,6 +26,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 | `backend/models/risk_model.joblib` | ✅ | Saved bundle: model + distance threshold + feature list (1.9 KB, committed). |
 | `backend/main.py` | ✅ | `POST /transactions` validates, cleans, saves, scores and stores the risk score in one DB transaction. 409 on duplicate, 422 on bad input. |
 | `backend/requirements.txt` | ✅ | Pinned versions, including sentence-transformers, torch and anthropic. |
+| `backend/ask.py` | ✅ | Hybrid retrieval (risk-level filter + pgvector top 10 + SQL stats), grounded prompt, citation verification. LLM = Gemini (default) or Claude via `LLM_PROVIDER`. |
 | `backend/embeddings.py` | ✅ | `build_summary`, `embed` (normalised, 384-dim), `to_pgvector`. |
 | `backend/backfill_embeddings.py` | ✅ | Fills missing embeddings; `--all` rebuilds every row. |
 | `backend/seed_transactions.py` | ✅ | Loads 2,440 real `fraudTest.csv` transactions (40 cards, 207 fraud) through the API. |
@@ -52,7 +57,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 | # | Task | Status |
 |---|---|---|
 | C7 | pgvector: `embedding vector(384)` + HNSW cosine index; embed a summary of each transaction in the same DB transaction as the insert; backfill script for existing rows | ✅ 2,440 seeded, all embedded |
-| C8 | `POST /ask`: top 8-10 vector hits + SQL aggregate + Claude, grounded answers with transaction IDs | ⬜ |
+| C8 | `POST /ask`: top 8-10 vector hits + SQL aggregate + LLM, grounded answers with transaction IDs | ✅ tested live with Gemini 3.8 Flash: 4/4 questions grounded, 0 invalid citations, trap question correctly declined |
 
 ## Phase D: Frontend
 
@@ -70,6 +75,9 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 Add one line every time something moves.
 
+- **2026-10-17:** C8 done, so **Phase C is complete**. Live test with `gemini-3.8-flash`: all 4 questions grounded, 0 invalid citations, the Mumbai trap correctly declined. Found a model blind spot (late-night fraud) and a retrieval gap (time questions); both are in the backlog.
+- **2026-10-17:** Added Gemini (free tier) as the default `/ask` LLM; Claude stays available with `LLM_PROVIDER=claude`. Errors are normalised to 503/429/502.
+- **2026-10-17:** C8 code written: `POST /ask` using Claude Opus 5.5, effort medium, server-side refusal fallback. Offline checks passed. Found and fixed a gap: with no credentials the SDK raises TypeError, not AnthropicError, so we now check up front and return a clear 503.
 - **2026-10-17:** C7 done. Seeded 2,440 transactions through the API (all 201). Every row is embedded. The high band holds 110 of 129 actual fraud; overall the model caught 164 of 207 fraud as medium/high. Vector search works, but merchant names dominate similarity (journal §17).
 - **2026-10-17:** C7 code written: summaries + embeddings saved in the same DB transaction as the score, plus backfill and seed scripts. The DB was recreated on the pgvector image after a collation mismatch (test data only). Installed sentence-transformers 6.1.0, torch 2.14.1 and anthropic 1.15.0 (after a network dropout).
 - **2026-10-17:** Decision change: MongoDB Atlas → **pgvector** for vector search (journal §16).

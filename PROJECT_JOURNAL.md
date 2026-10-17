@@ -492,6 +492,68 @@ The original reason for Atlas was "one less service than Pinecone". pgvector is 
 
 ---
 
+## 18. Task C8: `POST /ask`, questions in plain English
+
+**Request:** `{"question": "Which categories have the most high-risk transactions?"}`
+**Response:** the answer text, the transactions it cites (ID, trans_num, summary), any citations we removed, the filter applied, and which model answered.
+
+**How it works:**
+
+```
+question
+  │
+  ├─ 1. keyword filter: "high-risk" → WHERE risk_level = 'high'   (none if 0 or 2+ levels named)
+  ├─ 2. embed question (MiniLM) → pgvector: 10 closest summaries   (EXAMPLES)
+  ├─ 3. 4 small SQL aggregates over the whole DB                   (STATISTICS)
+  │      by risk level · top categories · top merchants · time of day
+  │   ── database connection closed here ──
+  ├─ 4. Claude Opus 5.5 with grounding rules + <data>STATISTICS + EXAMPLES</data>
+  └─ 5. verify every [#ID] cited was in EXAMPLES; strip any that weren't
+```
+
+**Key decisions and why:**
+
+1. **Hybrid retrieval.** EXAMPLES come from vector search (good at "what is this about"), STATISTICS come from SQL (good at exact counts and rankings). Section 17 showed embeddings can't count and get distracted by merchant names, so neither alone is enough.
+2. **Always send the statistics.** The original plan was to add them only for comparison questions, but detecting those is itself error-prone. They're about 40 lines, so always including them is cheap and removes a failure mode.
+3. **A simple keyword filter for risk level** (not an AI-chosen filter). It's predictable, testable, and visible in the response (`risk_level_filter`). If two levels are named ("compare high and low"), we don't filter. *Possible upgrade:* let Claude choose filters through tool use, or generate SQL itself ("text-to-SQL"). That's more flexible but harder to keep safe.
+4. **Grounding rules in the system prompt:** use only the given data; use STATISTICS for counts, because EXAMPLES are only a sample; cite as `[#ID]`; say so when the data can't answer; the risk score isn't a probability.
+5. **Citation verification in code.** We don't just *ask* Claude to cite correctly, we **check**. Any `[#ID]` that wasn't in the examples is removed and reported in `removed_invalid_citations`. "Trust, but verify."
+6. **Prompt-injection guard.** Merchant names come from outside data, and someone could name a merchant "Ignore previous instructions…". All data goes inside `<data>` tags, and the system prompt says text there is data, never instructions. Also, the `/ask` database session is `READ ONLY`, so even a fully tricked model couldn't change data through this endpoint (and the model never writes SQL anyway).
+7. **Close the DB connection before calling Claude.** Claude takes seconds. Holding a connection that long would let a few slow questions use up the pool. So: read, close, then call.
+8. **Model: Claude Opus 5.5 at effort `medium`.** Opus 5.5 is the current default model, and thinking is always on for it. Effort controls how much it thinks: `medium` (the model's default, set explicitly) suits a short, grounded Q&A. A question costs roughly 1–2 cents.
+9. **Server-side refusal fallback** (`fallbacks="default"`). If the model declines on safety grounds, the API automatically re-runs the request on a suitable fallback model in the same call. If everything declines (`stop_reason == "refusal"`), we return a polite "can't answer" instead of an error.
+10. **Clear errors, typed exceptions:** no key → 503 "not configured"; bad key → 503; rate limit → 429; Claude down or unreachable → 502. `/transactions` keeps working without a key. **Bug found while testing:** with no credentials at all, the SDK raises a plain `TypeError` (not its own error type), which would have become a confusing 500. We now check for credentials up front.
+
+**Update: switchable LLM provider, Gemini by default.** To use a free API key, `/ask` now supports **Google Gemini** (free tier from Google AI Studio) as well as Claude, chosen by one setting in `.env`: `LLM_PROVIDER=gemini` (default) or `claude`.
+- **Only the "call the model" step changed.** Retrieval, the grounding prompt, `<data>` fencing, citation verification and the read-only DB session are shared, so both providers get the same safety checks.
+- **Provider-specific errors become three of our own** (`LLMNotConfigured` → 503, `LLMRateLimited` → 429, `LLMUnavailable` → 502), so `main.py` doesn't need to know which provider is in use. This is the **adapter pattern**: one interface, interchangeable implementations.
+- **Each SDK is imported only inside its own function**, so the app runs with just one of them installed.
+- Gemini settings: `temperature=0.2` (low randomness, which suits factual answers from data). The model is set by `GEMINI_MODEL` (default `gemini-3.8-flash`, the newest **stable** flash model available to our key), so it can change without touching code. We avoided `*-preview` models (they can change or disappear) and `gemini-flash-latest` (an alias that silently changes over time, which hurts reproducibility).
+- **Secret hygiene:** an API key got pasted into a chat, so it was treated as leaked and **rotated** (deleted, new one created, stored only in the gitignored `.env`).
+- **Free-tier trade-offs (say these in interviews):** per-minute and per-day request limits (we return a clear 429), and Google may use free-tier prompts to improve its products. That's fine for simulated data, but for real customer data you'd use a paid tier or a provider with a no-training/zero-retention agreement.
+
+**End-to-end test results (Gemini 3.8 Flash, 2,440 seeded transactions):**
+
+| Question | Result |
+|---|---|
+| "Which spending categories have the most high-risk transactions?" | ✅ Exact counts from STATISTICS (shopping_net 60, shopping_pos 27, …); no citations (correct for a counting question); filter `high` applied |
+| "Show me suspicious late-night online shopping purchases" | ✅ Honestly said no example matched; offered close alternatives (22:00–23:48 high-risk), clearly labelled; 5 valid citations |
+| "Why were the high-risk transactions flagged?" | ✅ Named the model's 3 signals with 9 valid citations; numbers match the summaries |
+| "What was the average transaction amount in Mumbai?" (trap) | ✅ "The data does not contain location information" (no invented number) |
+
+`removed_invalid_citations` was empty every time.
+
+**What the answers revealed:**
+1. **Retrieval gap for time questions.** Embeddings don't capture "late night" precisely (as seen in section 17), so no late-night high-risk examples were retrieved. *Fix idea:* keyword filters for time of day and category, like the risk-level filter.
+2. **A blind spot in the model itself:** the statistics show **65 confirmed frauds late at night (0–6) but only 14 high-risk transactions** in that window. The model has no time-of-day feature, so it can't see this pattern. *Fix idea:* add an hour/late-night feature and retrain. **Interview story:** "Using the question-answering layer on my own data surfaced a gap in my model, so I knew exactly which feature to add next."
+3. Minor: STATISTICS show raw category codes (`shopping_net`); they could use the readable names the summaries already use.
+
+**Interview line (provider):** "The LLM sits behind a small adapter, so I can switch between Gemini and Claude with one config value. Retrieval, grounding and citation checks don't depend on the model provider."
+
+**Interview line:** "The /ask endpoint does hybrid retrieval: a keyword-derived SQL filter plus pgvector similarity for relevant examples, and SQL aggregates for exact numbers, because embeddings can't count. Claude answers under a grounding-only prompt, with the data fenced off against prompt injection, and I verify every cited transaction ID in code, stripping any it wasn't given. The database session is read-only and closed before the model call."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -527,3 +589,10 @@ The original reason for Atlas was "one less service than Pinecone". pgvector is 
 | 2026-10-17 | Embedding in the same DB transaction; backfill script as fallback | Search data never drifts from source; rebuildable |
 | 2026-10-17 | Hybrid retrieval for /ask (vector + SQL) | Embeddings are weak at exact facts (times, counts) |
 | 2026-10-17 | Fraud-heavy demo seed (~8.5%) | Enough fraud examples to explore; not the real rate |
+| 2026-10-17 | /ask: always include SQL stats (not only for comparison questions) | Cheap; avoids misclassifying question types |
+| 2026-10-17 | Keyword risk-level filter, not LLM-chosen filters | Predictable, testable, visible in the response |
+| 2026-10-17 | Verify citations in code; strip unknown IDs | Don't just trust the model to cite correctly |
+| 2026-10-17 | `<data>` fencing + READ ONLY DB session for /ask | Prompt-injection defence in depth |
+| 2026-10-17 | Close DB connection before calling Claude | Slow model calls must not hold DB connections |
+| 2026-10-17 | Claude Opus 5.5, effort medium, server-side refusal fallback | Current default model; right depth for short grounded Q&A |
+| 2026-10-17 | **Gemini (free tier) as default LLM; Claude kept behind `LLM_PROVIDER`** (supersedes "Claude API for RAG generation") | Free API key for the demo; adapter keeps retrieval and safety provider-independent |

@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from psycopg2.extras import Json, RealDictCursor
 from pydantic import BaseModel, Field
 
+from ask import LLMNotConfigured, LLMRateLimited, LLMUnavailable, answer, retrieve
 from embeddings import build_summary, embed, get_model, to_pgvector
 from scoring import model_version, score_transaction
 
@@ -33,6 +34,10 @@ class TransactionIn(BaseModel):
     merch_lat: float = Field(ge=-90, le=90)
     merch_long: float = Field(ge=-180, le=180)
     is_fraud: Optional[bool] = None
+
+
+class AskIn(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
 
 
 def get_connection():
@@ -143,3 +148,25 @@ def create_transaction(txn: TransactionIn):
         "risk_level": result["risk_level"],
         "reasons": result["reasons"],
     }
+
+
+@app.post("/ask")
+def ask(body: AskIn):
+    # Read what we need, then close the connection before calling the LLM (which takes
+    # seconds), so a slow answer never holds a database connection.
+    conn = get_connection()
+    try:
+        with conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SET TRANSACTION READ ONLY")
+            risk_level, examples, stats = retrieve(cur, body.question)
+    finally:
+        conn.close()
+
+    try:
+        return answer(body.question, risk_level, examples, stats)
+    except LLMNotConfigured as e:
+        raise HTTPException(status_code=503, detail=f"LLM not configured: {e}")
+    except LLMRateLimited as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except LLMUnavailable as e:
+        raise HTTPException(status_code=502, detail=str(e))

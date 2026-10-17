@@ -10,3 +10,4 @@ joblib==1.6.0
 sentence-transformers==6.1.0
 torch==2.14.1
 anthropic==1.15.0
+google-genai==2.31.0
