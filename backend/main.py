@@ -1,20 +1,30 @@
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 import psycopg2
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from psycopg2.extras import Json, RealDictCursor
 from pydantic import BaseModel, Field
 
 from ask import LLMNotConfigured, LLMRateLimited, LLMUnavailable, answer, retrieve
-from embeddings import build_summary, embed, get_model, to_pgvector
+from embeddings import CATEGORY_NAMES, build_summary, embed, get_model, to_pgvector
 from scoring import model_version, score_transaction
 
 load_dotenv()
 
 app = FastAPI()
+
+# Browsers only let the dashboard (another origin) read our responses if we allow it.
+# Allow just the known frontend origin(s), not "*".
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("FRONTEND_ORIGINS", "http://localhost:3000").split(","),
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 MODEL_VERSION = model_version()
 
@@ -42,6 +52,34 @@ class AskIn(BaseModel):
 
 def get_connection():
     return psycopg2.connect(os.getenv("DATABASE_URL"))
+
+
+def read_rows(sql, params=None):
+    """Run a read-only query and return rows as dicts."""
+    conn = get_connection()
+    try:
+        with conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SET TRANSACTION READ ONLY")
+            cur.execute(sql, params)
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+# Shape of one transaction as the dashboard sees it. Only the last 4 card digits
+# ever leave the API: the browser never needs the full card number.
+TRANSACTION_COLUMNS = """
+    t.id, t.trans_num, right(t.cc_num, 4) AS card_last4, t.merchant, t.category,
+    t.amount::float AS amount, t.trans_time, t.is_fraud,
+    r.risk_score, r.risk_level, r.reasons, r.features, r.model_version
+"""
+
+
+def present_transaction(row):
+    row = dict(row)
+    row.pop("total", None)
+    row["category_name"] = CATEGORY_NAMES.get(row["category"], row["category"])
+    return row
 
 
 def clean_transaction(txn):
@@ -150,6 +188,63 @@ def create_transaction(txn: TransactionIn):
     }
 
 
+@app.get("/stats")
+def stats():
+    row = read_rows(
+        """
+        SELECT count(*)                                          AS total,
+               count(*) FILTER (WHERE r.risk_level = 'high')     AS high,
+               count(*) FILTER (WHERE r.risk_level = 'medium')   AS medium,
+               count(*) FILTER (WHERE r.risk_level = 'low')      AS low,
+               coalesce(sum(t.amount) FILTER (WHERE r.risk_level = 'high'), 0)::float AS high_risk_amount,
+               coalesce(sum(t.amount), 0)::float                  AS total_amount
+          FROM transactions t
+          JOIN risk_scores r ON r.transaction_id = t.id
+        """
+    )[0]
+    return {**row, "model_version": MODEL_VERSION}
+
+
+@app.get("/transactions")
+def list_transactions(
+    risk_level: Optional[Literal["high", "medium", "low"]] = None,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    # count(*) OVER () adds the total matching rows to every row, so one query
+    # gives both the page and the number of pages.
+    rows = read_rows(
+        f"""
+        SELECT {TRANSACTION_COLUMNS}, count(*) OVER () AS total
+          FROM transactions t
+          JOIN risk_scores r ON r.transaction_id = t.id
+         WHERE (%(risk_level)s::text IS NULL OR r.risk_level = %(risk_level)s::text)
+         ORDER BY t.trans_time DESC, t.id DESC
+         LIMIT %(limit)s OFFSET %(offset)s
+        """,
+        {"risk_level": risk_level, "limit": limit, "offset": offset},
+    )
+    total = rows[0]["total"] if rows else 0
+    return {"total": total, "limit": limit, "offset": offset,
+            "items": [present_transaction(r) for r in rows]}
+
+
+@app.get("/transactions/{transaction_id}")
+def get_transaction(transaction_id: int):
+    rows = read_rows(
+        f"""
+        SELECT {TRANSACTION_COLUMNS}
+          FROM transactions t
+          JOIN risk_scores r ON r.transaction_id = t.id
+         WHERE t.id = %(id)s
+        """,
+        {"id": transaction_id},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"Transaction {transaction_id} not found")
+    return present_transaction(rows[0])
+
+
 @app.post("/ask")
 def ask(body: AskIn):
     # Read what we need, then close the connection before calling the LLM (which takes
@@ -158,12 +253,12 @@ def ask(body: AskIn):
     try:
         with conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SET TRANSACTION READ ONLY")
-            risk_level, examples, stats = retrieve(cur, body.question)
+            context = retrieve(cur, body.question)
     finally:
         conn.close()
 
     try:
-        return answer(body.question, risk_level, examples, stats)
+        return answer(body.question, context)
     except LLMNotConfigured as e:
         raise HTTPException(status_code=503, detail=f"LLM not configured: {e}")
     except LLMRateLimited as e:

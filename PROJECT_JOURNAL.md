@@ -554,6 +554,97 @@ question
 
 ---
 
+## 19. Model v2: the night-time feature (and smarter /ask filters)
+
+**How we found it:** the `/ask` statistics showed 65 confirmed frauds late at night but only 14 flagged high-risk. The model had no notion of time.
+
+**Step 1: look at the data before adding anything** (training split only, to avoid leakage):
+
+| Hours | Share of transactions | Share of all fraud | Fraud rate |
+|---|---|---|---|
+| **22:00–03:59** | 23.5% | **84.7%** | **2.09%** |
+| all other hours | 76.5% | 15.3% | 0.12% |
+
+The edge is sharp (1.46% at 3 am, 0.11% at 4 am). **Correction:** our earlier "late night = 0–6" bucket was in the wrong place, and 22:00–23:59 alone holds 51% of fraud. All time buckets (summaries, `/ask` stats, `queries.sql`) now use 22:00–04:00 for "late night".
+
+**Step 2: the feature.** `night_time` = the hour is in {22, 23, 0, 1, 2, 3}. It's a yes/no feature, so the explanation stays readable: *"Made at 23:15, in the 22:00-04:00 window when most fraud happens."* It's defined once in `features.py` (`NIGHT_HOURS`), and training, scoring, summaries and `/ask` all import it from there.
+
+**Step 3: compare v1 and v2 on the same test set:**
+
+| | v1 (4 features) | v2 (+night_time) |
+|---|---|---|
+| PR-AUC | 0.210 | **0.285** (+36%) |
+| night_time weight | n/a | **+1.14** (as strong as amount, +1.14) |
+| At 0.9: alerts / precision / recall | 3,476 / 22.9% / 53.1% | **2,725 / 32.9% / 59.8%** |
+| At 0.9: night-time fraud caught | 52.8% | **61.8%** |
+| At 0.9: daytime fraud caught | 54.6% | 48.5% ⚠️ |
+
+**The trade-off (be ready to explain this):** logistic regression *adds up* evidence, so "not at night" now counts *against* a transaction. Daytime frauds start lower, and fewer of them reach the threshold. Daytime is only 15% of fraud, so overall v2 is clearly better, but it's a real cost. *Fixes for later:* "unusual hour *for this card*" (personal baselines), or a tree-based model (e.g. gradient boosting) that can learn combinations like "big amount at 2pm". The cost is less direct explainability (it would need SHAP).
+
+**Step 4: re-tune the risk bands.** With v2, a 0.5 cutoff would flag ~32k test transactions, because every night transaction gets lifted. So **Medium moved from 0.5 to 0.7**:
+
+| | v1 at 0.5 (old medium) | v2 at 0.7 (new medium) |
+|---|---|---|
+| Alerts | 17,472 | **8,751** (half) |
+| Precision | 6.8% | **13.1%** (about double) |
+| Recall | 78.9% | 76.6% (about the same) |
+
+Lesson: **when the model changes, re-check the thresholds.** They're tuned to a particular model's score distribution.
+
+**Example (same $300 first-time purchase):** 23:15 scores **0.89 (medium)** with night-time as the top reason; 14:15 scores **0.35 (low)**.
+
+**Model version:** the fingerprint changed automatically from `c8b8b28efe16` to `f683e347ae3d`, so every stored score says which model produced it.
+
+**/ask retrieval improvements (same keyword-filter approach as risk level):**
+- **Time of day:** "late night / after midnight / at night / overnight" → hours 22–03 (the same window as the model); morning, afternoon and evening too. If two windows are named ("night and evening"), no filter is applied.
+- **Category:** "online shopping" → `shopping_net`; "shopping" → both shopping categories; "groceries", "gas/fuel", "travel/flights/hotels", "food/dining", etc. Specific phrases are matched first and then removed, so "online shopping" doesn't also match plain "shopping". "home" is deliberately excluded, because "far from home" isn't a category.
+- **Fallback:** if the filters match nothing, search without them and **tell the model** the examples don't satisfy the filters, so it can't present near-misses as matches.
+- **Readable categories in the statistics** ("online shopping", not `shopping_net`).
+- The response now includes `filters` (what was detected) and `filters_relaxed`.
+
+**Re-seeded with v2 (same 2,440 transactions), compared with v1:**
+
+| | v1 | v2 |
+|---|---|---|
+| High: alerts / actually fraud | 129 / 110 (85%) | **141 / 126 (89%)** |
+| Fraud caught as high | 110 / 207 (53%) | **126 / 207 (61%)** |
+| Total alerts (high + medium) | 453 | **254 (−44%)** |
+| Alerts that were real fraud | 36% | **61%** |
+| Fraud missed (low) | 43 | 53 ⚠️ |
+
+This matches the test-set analysis: better high-risk detection and far fewer false alarms, at the cost of a few more misses (daytime fraud plus the stricter medium cutoff). Precision here is inflated by the fraud-heavy seed.
+
+**/ask re-test:** "Show me suspicious late-night online shopping purchases" now detects `late night (22:00-04:00)` + `shopping_net` with `filters_relaxed: false`. All 7 citations are online shopping between 22:09 and 23:58, with 0 invalid citations. The statistics show 172 of 207 seeded frauds (83%) happened at night, consistent with the 84.7% in training.
+
+**Habit: verify the LLM's specific claims against the source.** The answer labelled some transactions "not confirmed fraud". The labels were in its prompt but not in the returned summaries, so we checked them with SQL (`SELECT id, is_fraud FROM transactions WHERE id IN (...)`) rather than taking the model's word for it.
+
+**Interview line:** "Asking my own system questions showed that 85% of fraud happens between 10 pm and 4 am, which my model couldn't see. I added a night-time feature: PR-AUC went up 36%, and at the high-risk cutoff alerts dropped 22% while recall rose from 53% to 60%. The cost was weaker recall on daytime fraud, because logistic regression is additive. I documented it, re-tuned the medium threshold for the new score distribution, and would address it next with per-card time baselines or a tree model."
+
+---
+
+## 20. Task D9a: read endpoints for the dashboard
+
+**What:** three read-only endpoints the dashboard calls, plus CORS.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /stats` | Tile numbers: total, high/medium/low, total and high-risk amounts, model version |
+| `GET /transactions?risk_level=high&limit=25&offset=0` | One page of transactions (newest first) + `total` for page numbers |
+| `GET /transactions/{id}` | One transaction (so a clicked `[#660]` citation can be shown even if it's not on the current page); 404 if missing |
+
+**Decisions and why:**
+- **Only the last 4 card digits leave the API** (`right(cc_num, 4)`). The browser never needs the full number. This is **data minimisation**: don't expose what the client doesn't need. In a real payments system, full card numbers fall under PCI DSS rules.
+- **Validation before SQL:** `risk_level` is typed as `Literal["high","medium","low"]`, so anything else returns 422 automatically. `limit` is capped at 1–100, so nobody can request a million rows at once.
+- **Pagination with `LIMIT/OFFSET` + `count(*) OVER ()`.** A **window function** adds the total match count to every row, so one query returns both the page and the total. *Known limitation:* OFFSET gets slower deep into large tables. At scale you'd use **keyset pagination** ("rows older than the last one I saw").
+- **Every read runs in a `READ ONLY` transaction** through one helper (`read_rows`), so these endpoints can't change data even by mistake.
+- **CORS only for the known frontend origin** (`http://localhost:3000`, configurable with `FRONTEND_ORIGINS`), not `*`. Browsers block a page on one origin from reading another origin's responses unless the server allows it. That's the **same-origin policy**, and CORS is the server saying who's allowed.
+
+**Tested:** stats 2,440 / 141 / 113 / 2,186; filtered page `total: 141` with `card_last4` only; #660 found; unknown ID → 404; `risk_level=extreme` → 422.
+
+**Interview line:** "The dashboard reads through paginated, read-only endpoints that validate input with types, return only the last four card digits, and allow CORS for the frontend origin only. Pagination uses a window function so one query gives both the page and the total."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -596,3 +687,8 @@ question
 | 2026-10-17 | Close DB connection before calling Claude | Slow model calls must not hold DB connections |
 | 2026-10-17 | Claude Opus 5.5, effort medium, server-side refusal fallback | Current default model; right depth for short grounded Q&A |
 | 2026-10-17 | **Gemini (free tier) as default LLM; Claude kept behind `LLM_PROVIDER`** (supersedes "Claude API for RAG generation") | Free API key for the demo; adapter keeps retrieval and safety provider-independent |
+| 2026-10-17 | Add `night_time` feature (22:00–03:59), model v2 | 84.7% of training fraud in that window; PR-AUC 0.21 → 0.285 |
+| 2026-10-17 | **Medium band 0.5 → 0.7** (supersedes earlier bands) | Same recall as before with half the alerts under v2 |
+| 2026-10-17 | "Late night" = 22:00–04:00 everywhere (was 0–6) | Data showed the real fraud window; one definition (`NIGHT_HOURS`) |
+| 2026-10-17 | /ask time + category keyword filters, with an explicit fallback note | Embeddings can't match times or categories precisely |
+| 2026-10-17 | API returns card last 4 only; CORS limited to the frontend origin | Data minimisation; least-privilege browser access |

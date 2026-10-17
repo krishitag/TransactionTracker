@@ -7,11 +7,12 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 ## Right now
 
 - **Current phase:** Phase C done → Phase D (frontend)
-- **Next task:** D9, Next.js dashboard
-- **Improvement backlog (found via /ask, journal §18):**
-  1. Time-of-day + category keyword filters for /ask retrieval
-  2. Add an hour / late-night feature to the model and retrain (65 late-night frauds, only 14 flagged high)
-  3. Readable category names in /ask statistics
+- **Next task:** D9, Next.js dashboard. Waiting on your choice of frontend plugins/tools before starting. Disk is down to ~2 GB free; free some before `npm install`.
+- **Improvement backlog:**
+  1. ~~Time-of-day + category keyword filters for /ask~~ ✅
+  2. ~~Night-time feature + retrain~~ ✅ (model v2, journal §19)
+  3. ~~Readable category names in /ask statistics~~ ✅
+  4. Daytime-fraud recall dropped with v2: try per-card hour baselines or a tree model (later)
 - **Blockers:** none
 - **To start the database:** `docker compose up -d` from the repo root (Postgres 16 on port **5433**)
 
@@ -63,7 +64,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 | # | Task | Status |
 |---|---|---|
-| D9 | Next.js + Tailwind + shadcn: stat tiles, transaction table with risk badges and reasons, chat panel | ⬜ |
+| D9a | Backend for the dashboard: `GET /stats`, `GET /transactions` (filter + pagination), `GET /transactions/{id}`, CORS for localhost:3000 | ✅ |
+| D9b | Next.js dashboard: stat tiles, transaction table with risk badges and reasons, chat panel | ⬜ waiting on plugin choice |
 
 ## Phase E: Ship
 
@@ -75,6 +77,9 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 Add one line every time something moves.
 
+- **2026-10-17:** D9a done: read endpoints + CORS, all tested (stats, filtered page, single transaction, 404, 422).
+- **2026-10-17:** Re-seeded with v2 (all 2,440 scored by `f683e347ae3d`). High: 141 alerts, 126 fraud; total alerts 453 → 254; fraud missed 43 → 53. /ask late-night online shopping question now filters correctly (7 valid citations).
+- **2026-10-17:** Model v2: added `night_time` (22:00–03:59). PR-AUC 0.21 → 0.285; at 0.9 alerts −22%, precision 22.9% → 32.9%, recall 53.1% → 59.8%; daytime recall fell 54.6% → 48.5% (documented). Medium band moved 0.5 → 0.7. /ask gained time and category filters with a fallback, plus readable category names. "Late night" redefined as 22:00–04:00 everywhere.
 - **2026-10-17:** C8 done, so **Phase C is complete**. Live test with `gemini-3.8-flash`: all 4 questions grounded, 0 invalid citations, the Mumbai trap correctly declined. Found a model blind spot (late-night fraud) and a retrieval gap (time questions); both are in the backlog.
 - **2026-10-17:** Added Gemini (free tier) as the default `/ask` LLM; Claude stays available with `LLM_PROVIDER=claude`. Errors are normalised to 503/429/502.
 - **2026-10-17:** C8 code written: `POST /ask` using Claude Opus 5.5, effort medium, server-side refusal fallback. Offline checks passed. Found and fixed a gap: with no credentials the SDK raises TypeError, not AnthropicError, so we now check up front and return a clear 503.
