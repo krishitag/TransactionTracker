@@ -236,6 +236,50 @@ Raising the cutoff means fewer false alarms but more fraud getting through. That
 
 ---
 
+## 12. Task A3: scoring one transaction, with reasons
+
+**What `scoring.py` does:** `score_transaction(txn, history)` takes one new transaction plus that card's earlier transactions and returns:
+
+```json
+{
+  "risk_score": 0.9898,
+  "risk_level": "high",
+  "reasons": [
+    "4 other transactions on this card in the past hour",
+    "Amount $300.00 is about 4x the typical transaction ($70)",
+    "First time this card has paid Shop B"
+  ],
+  "features": {...},
+  "contributions": {"amt": 1.79, "txns_last_hour": 3.53, "new_merchant": 0.39, "merchant_distance_flag": 0.0}
+}
+```
+
+**Step by step:**
+1. **Why it needs history:** "How many transactions in the last hour?" can't be answered from one transaction. So we put history and the new transaction together, run the **same** `compute_features` used in training, and keep only the new transaction's row (it's marked with a hidden `_is_new` column).
+2. **Score:** apply the saved distance threshold, then `predict_proba`.
+3. **Risk level:** High ≥ 0.9, Medium ≥ 0.5, otherwise Low (from the table in section 11).
+4. **Reasons:** for each feature, `weight × scaled value` = how much it pushed the score up or down compared with an average transaction. We sort them, keep up to 3 that pushed the score up by at least 0.1, and turn each into a sentence. If none qualify, the reason is "No unusual signals".
+
+**Small details that matter:**
+- The model file is loaded **once** and reused, not reloaded for every request.
+- Every merchant in Sparkov is named `fraud_Something`. That's just how the simulator names them, not a fraud signal, so we strip it from the reason text. Otherwise every reason would *look* like fraud.
+- If a history row has exactly the same timestamp as the new transaction, it counts as earlier.
+
+**How I tested it** (on `fraudTest.csv`, a later period the model never saw):
+
+| Case | Score | Level | Top reason |
+|---|---|---|---|
+| Real fraud, $996 | 0.998 | high | Amount 14× typical |
+| Normal $53 purchase | 0.26 | low | First time at this merchant |
+| 5th transaction within an hour, $300 | 0.99 | high | 4 other transactions in the past hour |
+| Repeat $25 at a known shop | < 0.5 | low | No unusual signals |
+
+**An important honest caveat: the "risk score" isn't a true probability.** Because we trained with `class_weight="balanced"`, the model acts as if fraud were 50% of transactions instead of 0.58%. So 0.99 means "very high risk compared with other transactions", not "a 99% chance this is fraud". That's why the UI and API call it a **risk score**, not a "fraud probability". (Getting a true probability would need an extra step called *calibration*. That's a possible improvement, not needed for this project.)
+
+**Interview line:** "The scorer reuses the exact training feature code on the card's recent history plus the new transaction, so there's no skew. For explanations, I multiply each coefficient by the scaled feature value, which gives each feature's contribution relative to an average transaction, and I turn the top positive contributions into plain-English reasons. Because I used balanced class weights, I present the output as a relative risk score rather than a calibrated probability."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -252,3 +296,6 @@ Raising the cutoff means fewer false alarms but more fraud getting through. That
 | 2026-10-17 | Save model + threshold + feature list as one bundle | Scoring can't use a mismatched threshold |
 | 2026-10-17 | Keep distance flag despite ~0 weight | Harmless, honest finding to discuss; revisit with better features |
 | 2026-10-17 | Risk bands: High ≥ 0.9, Medium 0.5 to 0.9, Low < 0.5 | Based on the precision/recall table |
+| 2026-10-17 | Reasons = top 3 positive `coef × scaled value`, min 0.1 | Show only features that meaningfully raised the risk |
+| 2026-10-17 | Call it "risk score", not "fraud probability" | Balanced class weights mean it isn't calibrated |
+| 2026-10-17 | Scorer uses Sparkov column names; the API maps to them in B6 | One feature pipeline, no duplicate column logic |
