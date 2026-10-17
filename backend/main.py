@@ -21,7 +21,7 @@ app = FastAPI()
 # Allow just the known frontend origin(s), not "*".
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("FRONTEND_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=os.getenv("FRONTEND_ORIGINS", "http://localhost:3100").split(","),
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )

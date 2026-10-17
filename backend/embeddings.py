@@ -8,6 +8,8 @@ from datetime import datetime
 
 from sentence_transformers import SentenceTransformer
 
+from features import NIGHT_HOURS
+
 MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 
@@ -40,7 +42,8 @@ def get_model():
 
 
 def time_of_day(hour):
-    if hour < 6:
+    """Buckets aligned with the model's night_time window (22:00-03:59)."""
+    if hour in NIGHT_HOURS:
         return "late night"
     if hour < 12:
         return "morning"

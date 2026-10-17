@@ -8,10 +8,12 @@ transaction IDs, which we then verify.
 import os
 import re
 
-from embeddings import embed, to_pgvector
+from embeddings import CATEGORY_NAMES, embed, to_pgvector
+from features import NIGHT_HOURS
 
 CLAUDE_MODEL = "claude-opus-5-5"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+GEMINI_TIMEOUT_SECONDS = 45.0
 TOP_K = 10
 
 SYSTEM_PROMPT = """You are an analyst assistant for a card-transaction risk platform.
@@ -39,8 +41,37 @@ RISK_LEVEL_PATTERNS = {
     "low": re.compile(r"\blow[- ]risk\b", re.IGNORECASE),
 }
 
+# Time-of-day phrases -> hours. "late night" uses the same window as the model's night_time feature.
+TIME_FILTERS = {
+    "late night (22:00-04:00)": (
+        re.compile(r"\b(late[- ]night|middle of the night|after midnight|overnight|night[- ]?time|at night)\b", re.IGNORECASE),
+        sorted(NIGHT_HOURS),
+    ),
+    "morning (04:00-12:00)": (re.compile(r"\bmornings?\b", re.IGNORECASE), list(range(4, 12))),
+    "afternoon (12:00-18:00)": (re.compile(r"\bafternoons?\b", re.IGNORECASE), list(range(12, 18))),
+    "evening (18:00-22:00)": (re.compile(r"\bevenings?\b", re.IGNORECASE), list(range(18, 22))),
+}
+
+# Category phrases -> Sparkov category codes. Specific phrases come first and are removed
+# from the question once matched, so "online shopping" doesn't also match plain "shopping".
+# "home" is deliberately left out: it's ambiguous ("far from home").
+CATEGORY_FILTERS = [
+    (re.compile(r"\bonline shopping\b", re.IGNORECASE), ["shopping_net"]),
+    (re.compile(r"\bin[- ]store shopping\b", re.IGNORECASE), ["shopping_pos"]),
+    (re.compile(r"\bshopping\b", re.IGNORECASE), ["shopping_net", "shopping_pos"]),
+    (re.compile(r"\bgrocer(y|ies)\b", re.IGNORECASE), ["grocery_pos", "grocery_net"]),
+    (re.compile(r"\b(gas|fuel|petrol|transport)\b", re.IGNORECASE), ["gas_transport"]),
+    (re.compile(r"\b(travel|flights?|trips?|hotels?)\b", re.IGNORECASE), ["travel"]),
+    (re.compile(r"\b(food|dining|restaurants?)\b", re.IGNORECASE), ["food_dining"]),
+    (re.compile(r"\bentertainment\b", re.IGNORECASE), ["entertainment"]),
+    (re.compile(r"\b(health|fitness|gym)\b", re.IGNORECASE), ["health_fitness"]),
+    (re.compile(r"\bpersonal care\b", re.IGNORECASE), ["personal_care"]),
+    (re.compile(r"\b(kids?|pets?|children)\b", re.IGNORECASE), ["kids_pets"]),
+]
+
 CITATION_PATTERN = re.compile(r"\[#(\d+)\]")
 
+# SQL filters first (exact facts), then rank what's left by meaning (pgvector).
 SEARCH_SQL = """
     SELECT t.id, t.trans_num, t.is_fraud, r.summary,
            r.embedding <=> %(query)s::vector AS distance
@@ -48,6 +79,8 @@ SEARCH_SQL = """
       JOIN transactions t ON t.id = r.transaction_id
      WHERE r.embedding IS NOT NULL
        AND (%(risk_level)s::text IS NULL OR r.risk_level = %(risk_level)s::text)
+       AND (%(categories)s::text[] IS NULL OR t.category = ANY(%(categories)s::text[]))
+       AND (%(hours)s::int[] IS NULL OR extract(hour FROM t.trans_time)::int = ANY(%(hours)s::int[]))
      ORDER BY r.embedding <=> %(query)s::vector
      LIMIT %(k)s
 """
@@ -70,10 +103,11 @@ STATS_QUERIES = {
          WHERE r.risk_level = 'high'
          GROUP BY t.merchant ORDER BY high_risk DESC, total_amount DESC LIMIT 8""",
     "Risk by time of day": """
-        SELECT CASE WHEN extract(hour FROM t.trans_time) < 6  THEN 'late night (0-6)'
-                    WHEN extract(hour FROM t.trans_time) < 12 THEN 'morning (6-12)'
-                    WHEN extract(hour FROM t.trans_time) < 18 THEN 'afternoon (12-18)'
-                    ELSE 'evening (18-24)' END AS time_of_day,
+        SELECT CASE WHEN extract(hour FROM t.trans_time)::int IN (22, 23, 0, 1, 2, 3)
+                                                                  THEN '1 late night (22:00-04:00)'
+                    WHEN extract(hour FROM t.trans_time) < 12 THEN '2 morning (04:00-12:00)'
+                    WHEN extract(hour FROM t.trans_time) < 18 THEN '3 afternoon (12:00-18:00)'
+                    ELSE '4 evening (18:00-22:00)' END AS time_of_day,
                count(*) AS txns,
                count(*) FILTER (WHERE r.risk_level = 'high') AS high_risk,
                sum(t.is_fraud::int) AS confirmed_fraud
@@ -106,6 +140,32 @@ def detect_risk_level(question):
     return found[0] if len(found) == 1 else None
 
 
+def detect_time_of_day(question):
+    """Return (label, hours) if the question names exactly one time of day, else (None, None)."""
+    found = [(label, hours) for label, (pattern, hours) in TIME_FILTERS.items() if pattern.search(question)]
+    return found[0] if len(found) == 1 else (None, None)
+
+
+def detect_categories(question):
+    """Return the category codes the question mentions, or None if it names none."""
+    categories = []
+    for pattern, codes in CATEGORY_FILTERS:
+        if pattern.search(question):
+            categories += [c for c in codes if c not in categories]
+            question = pattern.sub(" ", question)
+    return categories or None
+
+
+def detect_filters(question):
+    time_label, hours = detect_time_of_day(question)
+    return {
+        "risk_level": detect_risk_level(question),
+        "time_of_day": time_label,
+        "hours": hours,
+        "categories": detect_categories(question),
+    }
+
+
 def format_table(rows):
     if not rows:
         return "(no rows)"
@@ -115,20 +175,68 @@ def format_table(rows):
     return "\n".join(lines)
 
 
+def search(cur, query_vector, filters):
+    cur.execute(SEARCH_SQL, {
+        "query": query_vector,
+        "risk_level": filters["risk_level"],
+        "categories": filters["categories"],
+        "hours": filters["hours"],
+        "k": TOP_K,
+    })
+    return cur.fetchall()
+
+
 def retrieve(cur, question):
-    risk_level = detect_risk_level(question)
+    """Everything /ask needs from the database, gathered in one short read-only session."""
+    filters = detect_filters(question)
     query_vector = to_pgvector(embed([question])[0])
-    cur.execute(SEARCH_SQL, {"query": query_vector, "risk_level": risk_level, "k": TOP_K})
-    examples = cur.fetchall()
+    examples = search(cur, query_vector, filters)
+
+    # If the filters are so strict nothing matches, fall back to unfiltered examples,
+    # and tell the model they don't satisfy the filters.
+    filters_relaxed = False
+    if not examples and any(v for k, v in filters.items() if k != "hours"):
+        examples = search(cur, query_vector, {"risk_level": None, "categories": None, "hours": None})
+        filters_relaxed = True
 
     stats = {}
     for title, sql in STATS_QUERIES.items():
         cur.execute(sql)
-        stats[title] = cur.fetchall()
-    return risk_level, examples, stats
+        rows = cur.fetchall()
+        for row in rows:
+            if "category" in row:
+                row["category"] = CATEGORY_NAMES.get(row["category"], row["category"])
+        stats[title] = rows
+
+    return {
+        "filters": {k: v for k, v in filters.items() if k != "hours"},
+        "filters_relaxed": filters_relaxed,
+        "examples": examples,
+        "stats": stats,
+    }
 
 
-def build_prompt(question, examples, stats):
+def describe_filters(filters):
+    parts = []
+    if filters["risk_level"]:
+        parts.append(f"risk level = {filters['risk_level']}")
+    if filters["time_of_day"]:
+        parts.append(f"time of day = {filters['time_of_day']}")
+    if filters["categories"]:
+        parts.append("category in " + ", ".join(CATEGORY_NAMES.get(c, c) for c in filters["categories"]))
+    return "; ".join(parts)
+
+
+def build_prompt(question, context):
+    examples, stats = context["examples"], context["stats"]
+    filter_text = describe_filters(context["filters"])
+    if not filter_text:
+        filter_note = "EXAMPLES were selected by similarity only (no filters)."
+    elif context["filters_relaxed"]:
+        filter_note = (f"No transactions matched the filters ({filter_text}). The EXAMPLES below are the "
+                       f"closest matches WITHOUT those filters and do NOT satisfy them.")
+    else:
+        filter_note = f"EXAMPLES all satisfy these filters: {filter_text}."
     stats_text = "\n\n".join(f"{title}:\n{format_table(rows)}" for title, rows in stats.items())
     label = {True: "yes", False: "no", None: "unknown"}
     examples_text = "\n".join(
@@ -137,6 +245,7 @@ def build_prompt(question, examples, stats):
     return (
         f"<data>\nSTATISTICS (whole database):\n\n{stats_text}\n\n"
         f"EXAMPLES (most relevant transactions):\n{examples_text}\n</data>\n\n"
+        f"{filter_note}\n\n"
         f"Question: {question}"
     )
 
@@ -146,18 +255,37 @@ def call_gemini(prompt):
         raise LLMNotConfigured("set GEMINI_API_KEY in backend/.env")
     # Imported here so the app still runs when only the Claude SDK is installed.
     try:
+        import httpx
         from google import genai
         from google.genai import errors, types
     except ImportError:
         raise LLMNotConfigured("run: venv/bin/pip install google-genai")
     if "gemini" not in _clients:
-        _clients["gemini"] = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        # IPv4 only, with strict timeouts. Some networks advertise IPv6 without carrying
+        # it; Python then waits on each dead IPv6 address in turn and /ask hangs for
+        # minutes. Binding to 0.0.0.0 forces IPv4, which every host supports.
+        http_client = httpx.Client(
+            transport=httpx.HTTPTransport(local_address="0.0.0.0"),
+            timeout=httpx.Timeout(GEMINI_TIMEOUT_SECONDS, connect=5.0),
+        )
+        _clients["gemini"] = genai.Client(
+            api_key=os.getenv("GEMINI_API_KEY"),
+            http_options=types.HttpOptions(
+                timeout=int(GEMINI_TIMEOUT_SECONDS * 1000),
+                retry_options=types.HttpRetryOptions(attempts=2),
+                httpx_client=http_client,
+            ),
+        )
     try:
         response = _clients["gemini"].models.generate_content(
             model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.2),
         )
+    except httpx.TimeoutException:
+        raise LLMUnavailable(f"Gemini didn't respond within {GEMINI_TIMEOUT_SECONDS:.0f}s; try again")
+    except httpx.TransportError:
+        raise LLMUnavailable("Could not reach the Gemini API; check your connection")
     except errors.APIError as e:
         if e.code == 429:
             raise LLMRateLimited("Gemini rate limit reached (free tier); wait a minute and retry")
@@ -227,16 +355,17 @@ def check_citations(answer, examples):
     return answer, citations, invalid
 
 
-def answer(question, risk_level, examples, stats):
-    """Second half of /ask, run after the DB connection is closed (Claude takes seconds)."""
-    raw_answer, model_used = call_llm(build_prompt(question, examples, stats))
-    answer, citations, invalid = check_citations(raw_answer, examples)
+def answer(question, context):
+    """Second half of /ask, run after the DB connection is closed (the LLM takes seconds)."""
+    raw_answer, model_used = call_llm(build_prompt(question, context))
+    answer, citations, invalid = check_citations(raw_answer, context["examples"])
     return {
         "question": question,
         "answer": answer,
         "citations": citations,
         "removed_invalid_citations": invalid,
-        "risk_level_filter": risk_level,
-        "examples_retrieved": len(examples),
+        "filters": context["filters"],
+        "filters_relaxed": context["filters_relaxed"],
+        "examples_retrieved": len(context["examples"]),
         "model": model_used,
     }

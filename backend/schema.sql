@@ -1,5 +1,9 @@
 -- Postgres schema for the Transaction Risk Platform.
 -- Runs automatically the first time the Docker database starts (see docker-compose.yml).
+-- Existing databases get later changes from backend/migrations/ instead.
+
+-- pgvector: adds the vector column type and similarity search.
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Raw transactions: facts that never change once recorded.
 CREATE TABLE IF NOT EXISTS transactions (
@@ -31,8 +35,14 @@ CREATE TABLE IF NOT EXISTS risk_scores (
     contributions   JSONB NOT NULL,               -- per-feature coefficient x scaled value
     features        JSONB NOT NULL,               -- feature values the model saw
     model_version   TEXT NOT NULL,
-    scored_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    scored_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    summary         TEXT,                         -- one-sentence description used for search
+    embedding       vector(384)                   -- all-MiniLM-L6-v2 embedding of summary
 );
 
 -- Dashboard filters and counts by risk level.
 CREATE INDEX IF NOT EXISTS idx_risk_scores_level ON risk_scores (risk_level);
+
+-- Approximate nearest-neighbour search on embeddings, by cosine distance.
+CREATE INDEX IF NOT EXISTS idx_risk_scores_embedding
+    ON risk_scores USING hnsw (embedding vector_cosine_ops);

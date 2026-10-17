@@ -16,3 +16,8 @@ node_modules/
 # os
 .DS_Store
 Icon?
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+
+# tasteskill inspector working files and screenshots
+.taste-skill/

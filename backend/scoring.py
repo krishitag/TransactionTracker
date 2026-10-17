@@ -14,7 +14,9 @@ from features import add_distance_flag, compute_features
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "risk_model.joblib")
 
 HIGH_RISK = 0.9
-MEDIUM_RISK = 0.5
+# 0.7, not 0.5: with night_time, 0.5 would flag ~32k test transactions; 0.7 halves
+# alerts vs the old 0.5 band at about the same recall (journal section 19).
+MEDIUM_RISK = 0.7
 
 # Contributions below this are too small to be worth showing as a reason.
 MIN_REASON_CONTRIBUTION = 0.1
@@ -57,6 +59,9 @@ def _reason_text(feature, row, typical_amt):
         return f"First time this card has paid {merchant}"
     if feature == "merchant_distance_flag":
         return f"Merchant is {row['distance_km']:.0f} km from the cardholder's home, farther than usual"
+    if feature == "night_time":
+        return (f"Made at {row['trans_date_trans_time']:%H:%M}, in the 22:00-04:00 window "
+                f"when most fraud happens")
     return feature
 
 
@@ -111,6 +116,7 @@ def score_transaction(txn, history=None):
             "new_merchant": bool(row["new_merchant"]),
             "merchant_distance_flag": bool(row["merchant_distance_flag"]),
             "distance_km": round(float(row["distance_km"]), 1),
+            "night_time": bool(row["night_time"]),
         },
         "contributions": contributions,
     }

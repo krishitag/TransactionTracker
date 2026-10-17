@@ -69,13 +69,13 @@ SELECT t.merchant,
  ORDER BY high_risk_txns DESC, total_amount DESC
  LIMIT 10;
 
--- 3c. Risk by time of day. Our model has no time-of-day feature, so if fraud
---     clusters at night here, that's a feature worth adding later.
+-- 3c. Risk by time of day. Buckets match the model's night_time feature (22:00-04:00),
+--     the window holding ~85% of fraud in the training data.
 SELECT CASE
-         WHEN extract(hour FROM t.trans_time) < 6  THEN '1 late night (0-6)'
-         WHEN extract(hour FROM t.trans_time) < 12 THEN '2 morning (6-12)'
+         WHEN extract(hour FROM t.trans_time)::int IN (22, 23, 0, 1, 2, 3) THEN '1 late night (22-04)'
+         WHEN extract(hour FROM t.trans_time) < 12 THEN '2 morning (04-12)'
          WHEN extract(hour FROM t.trans_time) < 18 THEN '3 afternoon (12-18)'
-         ELSE                                           '4 evening (18-24)'
+         ELSE                                           '4 evening (18-22)'
        END                                           AS time_of_day,
        count(*)                                      AS txns,
        count(*) FILTER (WHERE r.risk_level = 'high') AS high_risk,
@@ -111,6 +111,12 @@ SELECT t.trans_time,
   JOIN first_high f  ON f.cc_num = t.cc_num
  WHERE t.trans_time BETWEEN f.trans_time - INTERVAL '2 days' AND f.trans_time + INTERVAL '2 days'
  ORDER BY t.trans_time;
+
+-- 4a2. Scores by model version (each retrain gets a new fingerprint).
+SELECT model_version, count(*) AS scored, min(scored_at) AS first_scored
+  FROM risk_scores
+ GROUP BY model_version
+ ORDER BY first_scored;
 
 -- 4b. Velocity bursts: transactions with 2+ others on the same card in the past hour.
 --     features is JSONB; ->> pulls a field out as text, ::int converts it.

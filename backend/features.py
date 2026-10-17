@@ -5,9 +5,13 @@ Both must import from here so the model always sees features computed the same w
 import numpy as np
 import pandas as pd
 
-FEATURE_COLUMNS = ["amt", "txns_last_hour", "new_merchant", "merchant_distance_flag"]
+FEATURE_COLUMNS = ["amt", "txns_last_hour", "new_merchant", "merchant_distance_flag", "night_time"]
 
 DISTANCE_PERCENTILE = 0.90
+
+# 22:00-03:59. Chosen from the training split only: these hours hold 23.5% of
+# transactions but 84.7% of fraud (fraud rate 2.09% vs 0.12% at other hours).
+NIGHT_HOURS = {22, 23, 0, 1, 2, 3}
 
 
 def haversine_distance(lat1, lon1, lat2, lon2):
@@ -22,7 +26,7 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 
 
 def compute_features(df):
-    """Add txns_last_hour, new_merchant and distance_km to a copy of df.
+    """Add txns_last_hour, new_merchant, distance_km and night_time to a copy of df.
 
     Expects the raw Sparkov columns: cc_num, merchant, amt, trans_date_trans_time,
     lat, long, merch_lat, merch_long. Rows can be in any order; the result is
@@ -47,6 +51,8 @@ def compute_features(df):
     df["new_merchant"] = ~df.duplicated(subset=["cc_num", "merchant"], keep="first")
 
     df["distance_km"] = haversine_distance(df["lat"], df["long"], df["merch_lat"], df["merch_long"])
+
+    df["night_time"] = df["trans_date_trans_time"].dt.hour.isin(NIGHT_HOURS)
     return df
 
 

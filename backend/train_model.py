@@ -17,7 +17,8 @@ print("Total rows loaded:", len(df))
 
 df = compute_features(df)
 
-X = df[["amt", "txns_last_hour", "new_merchant", "distance_km"]].copy()
+# distance_km stays raw until after the split, so its threshold is learned from training data only.
+X = df[[c for c in FEATURE_COLUMNS if c != "merchant_distance_flag"] + ["distance_km"]].copy()
 y = df["is_fraud"]
 
 X_train, X_test, y_train, y_test = train_test_split(
