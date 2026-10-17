@@ -25,6 +25,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 | `backend/embeddings.py` | ✅ | `build_summary`, `embed` (normalised, 384-dim), `to_pgvector`. |
 | `backend/backfill_embeddings.py` | ✅ | Fills missing embeddings; `--all` rebuilds every row. |
 | `backend/seed_transactions.py` | ✅ | Loads 2,440 real `fraudTest.csv` transactions (40 cards, 207 fraud) through the API. |
+| `backend/queries.sql` | ✅ | Saved exploration queries: health checks, model quality, risk by category/merchant/time, card timelines, vector + hybrid search, EXPLAIN. |
 | `backend/migrations/001_add_embeddings.sql` | ✅ | Adds pgvector columns + HNSW index to an older database. |
 | `backend/schema.sql` | ✅ | `transactions` + `risk_scores` tables, constraints, indexes. |
 | `docker-compose.yml` | ✅ | Local Postgres 16 on port 5433. Runs `schema.sql` on first start. |

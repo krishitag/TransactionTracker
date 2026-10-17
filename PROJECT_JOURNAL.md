@@ -480,6 +480,14 @@ The original reason for Atlas was "one less service than Pinecone". pgvector is 
 
 **What this teaches:** embeddings capture *what a text is about* (merchant, category), not *which facts matter most to us* (risk level, amount). So when a question says "high-risk", we must **filter with SQL** (`WHERE risk_level = 'high'`) and then rank by similarity. This is the main practical reason for pgvector: filtering and ranking happen in one query.
 
+**All the useful queries are saved in `backend/queries.sql`**, each with a comment explaining it. Run them all with `psql ... -f backend/queries.sql`. SQL concepts worth knowing from that file:
+- `count(*) FILTER (WHERE …)` counts only matching rows, inside a `GROUP BY`.
+- `sum(sum(x)) OVER ()` is a **window function**: the grand total next to each group's total, which gives percentages in one query.
+- `features ->> 'txns_last_hour'` reads a field out of a JSONB column.
+- `jsonb_array_elements_text(reasons)` turns a JSON list into rows, so you can count them.
+- `ORDER BY embedding <=> (SELECT …) LIMIT k` is the standard pgvector nearest-neighbour query shape.
+- `EXPLAIN ANALYZE` shows how Postgres actually ran a query and whether it used an index.
+
 **Interview line:** "On ingest, each transaction gets a natural-language summary embedded with MiniLM and stored in pgvector in the same transaction as its risk score, so search data can never drift from the source. I verified that semantic matching works, and also saw where it doesn't: precise filters like time or counts. That's why the question-answering layer uses hybrid retrieval, vector search for relevance plus SQL for exact facts."
 
 ---
