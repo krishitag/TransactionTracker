@@ -1,12 +1,12 @@
 # Project Status: Transaction Risk Platform
 
-_Last updated: 2026-10-17_
+_Last updated: 2026-10-18_
 
 Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 ## Right now
 
-- **Current phase:** Phase C done → Phase D (frontend)
+- **Current phase:** Phases A–C done · **Phase D (frontend) nearly done** (only the Vercel audit on the restyle is left) → Phase E (ship) next
 - **Next task:** Vercel web-design-guidelines audit on the restyle; then the open questions (Low badges green? summary line per filter?), then Phase E.
 - **Run it:** `docker compose up -d` (repo root) · `venv/bin/uvicorn main:app` (backend/) · `npm run dev` (frontend/, port **3100**)
 - Frontend tools installed: tasteskill (`design-taste-frontend`), `web-design-guidelines`, `playwright-cli` (uses your Chrome). Design system: `DESIGN.md` (blue). Disk ~1.7 GB free.
@@ -21,7 +21,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 - **Blockers:** none
 - **To start the database:** `docker compose up -d` from the repo root (Postgres 16 on port **5433**)
 
-## What exists today (commit `6928f16`)
+## What exists today (commit `a0d5fe5`)
 
 | File | State | Notes |
 |---|---|---|
@@ -40,7 +40,9 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 | `backend/migrations/001_add_embeddings.sql` | ✅ | Adds pgvector columns + HNSW index to an older database. |
 | `backend/schema.sql` | ✅ | `transactions` + `risk_scores` tables, constraints, indexes. |
 | `docker-compose.yml` | ✅ | Local Postgres 16 on port 5433. Runs `schema.sql` on first start. |
-| `frontend/` | ⬜ | Empty folder. |
+| `frontend/` | ✅ | Next.js 16 dashboard on :3100: risk-tinted stat cards (the filter), transaction table with reasons, "Ask the AI analyst" panel with clickable citations. Google Sans, DESIGN.md tokens. |
+| `DESIGN.md` | ✅ | Design system: blue palette + risk tints, Google Sans, dashboard revision (D9d). |
+| `PORTFOLIO_PLAN.md` | ✅ | Notes for the separate portfolio site (later). |
 
 ## Phase A: Finish the model
 
