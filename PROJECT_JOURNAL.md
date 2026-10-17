@@ -645,6 +645,25 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 
 ---
 
+## 21. Frontend design system and tools
+
+**Tools (chosen by me, installed into the project):**
+- **DESIGN.md** (from VoltAgent/awesome-design-md): a plain-markdown design system that agents read. Our `DESIGN.md` at the repo root is the single source for colours, type, spacing and rules.
+- **tasteskill v2** (`.agents/skills/design-taste-frontend`): "anti-slop" house rules plus a lint script and a real-browser inspector. **Its own scope says it's for public pages, not dashboards**, so it runs in full on the **project showcase page**, and the dashboard follows its house rules with two documented exceptions (no photo floor, no scroll-motion count).
+- **web-design-guidelines** (Vercel): an accessibility/UX audit run after building. It downloads Vercel's latest rules each time.
+- **playwright-cli** (Microsoft): drives my installed Chrome to click through the dashboard and take screenshots.
+- I read every skill file before using it, because skills are third-party instructions that run with full agent permissions.
+
+**Design decisions (all in `DESIGN.md`, applied to both surfaces for consistency):**
+- Structure inspired by a Stripe-style analysis (navy text, cool white surfaces, thin large type, tabular digits for money), **recoloured to blue** (my choice; no purple). No Stripe name, logo or gradient mesh is used.
+- Conflicts between the two sources were decided once: no gradients, no card borders or shadows at rest (tone steps instead), no tiny uppercase labels, 16px/400 body text, one font (Inter), pill buttons, a stat **band** instead of a row of cards.
+- **Risk colours are the one exception to "only blue"**: red for high, amber for medium, blue-grey for low, on badges only and always with the word. Colour alone would fail colour-blind users.
+- Every text colour pair was measured against WCAG AA (≥ 4.5:1); the lowest is 4.8:1.
+
+**Interview line:** "Before writing any UI I wrote a DESIGN.md with tokens and rules, reconciled two design sources into one documented set of decisions, checked contrast numerically, and kept risk status readable without relying on colour."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -692,3 +711,6 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 | 2026-10-17 | "Late night" = 22:00–04:00 everywhere (was 0–6) | Data showed the real fraud window; one definition (`NIGHT_HOURS`) |
 | 2026-10-17 | /ask time + category keyword filters, with an explicit fallback note | Embeddings can't match times or categories precisely |
 | 2026-10-17 | API returns card last 4 only; CORS limited to the frontend origin | Data minimisation; least-privilege browser access |
+| 2026-10-17 | One `DESIGN.md` for dashboard + showcase: Stripe-inspired structure, blue palette, tasteskill house rules | Consistency across surfaces; no purple (my choice) |
+| 2026-10-17 | tasteskill in full on the showcase page; house rules (with 2 documented exceptions) on the dashboard | The skill is scoped to public pages, not app screens |
+| 2026-10-17 | Risk badges keep red/amber/blue-grey with the word | Severity must be readable without colour alone |

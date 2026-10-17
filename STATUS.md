@@ -7,7 +7,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 ## Right now
 
 - **Current phase:** Phase C done → Phase D (frontend)
-- **Next task:** D9, Next.js dashboard. Waiting on your choice of frontend plugins/tools before starting. Disk is down to ~2 GB free; free some before `npm install`.
+- **Next task:** D9b. Scaffold Next.js (you), then I build the dashboard following `DESIGN.md`. After that: the showcase page with tasteskill.
+- Frontend tools installed: tasteskill (`design-taste-frontend`), `web-design-guidelines`, `playwright-cli` (uses your Chrome). Design system: `DESIGN.md` (blue). Disk ~1.7 GB free.
 - **Improvement backlog:**
   1. ~~Time-of-day + category keyword filters for /ask~~ ✅
   2. ~~Night-time feature + retrain~~ ✅ (model v2, journal §19)
