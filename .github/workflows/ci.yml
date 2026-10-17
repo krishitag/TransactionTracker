@@ -8,14 +8,14 @@ on:
 jobs:
   backend:
     name: Backend (ruff + pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -31,19 +31,23 @@ jobs:
 
   frontend:
     name: Frontend (tsc + ESLint + build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      # Next.js generates route types (e.g. LayoutProps) into .next/ during dev/build. A fresh CI
+      # checkout has neither, so generate them before type-checking (Next.js 16 docs: next typegen).
+      - name: Generate Next.js types
+        run: npx next typegen
       - name: Type check
         run: npx tsc --noEmit
       - name: Lint
