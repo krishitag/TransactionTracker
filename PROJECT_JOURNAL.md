@@ -789,6 +789,10 @@ The table's header row also takes the selected card's tint (light red / amber / 
 
 **Last round:** the Low **badges** went green too, so card, header and badges all agree. Rather than keeping two "low" colours, the existing `risk-low` token itself became green. **Vercel guidelines audit** on the restyle: two small fixes (a redundant wrapper, and `overscroll-contain` so scrolling to the end of the AI panel doesn't scroll the page). Everything else passes, except two deliberate exceptions: sentence case instead of Title Case, and filters in the URL (backlog 5).
 
+**Summary line per filter (option A).** The sentence under the table title used to talk about high-risk money on every view, even "Low-risk transactions". `/stats` now also returns `medium_risk_amount` and `low_risk_amount`, still from one query using `FILTER`, and the sentence describes the rows on screen: "2,186 transactions worth $130,932, 51% of all money". This is an *additive* API change (new fields only), so older clients keep working, and the frontend falls back to just the count if it talks to an older backend.
+
+Worth noticing for interviews: **Low is 90% of transactions but only 51% of the money, while High is 6% of transactions and 42% of the money.** Risky transactions are few but large, which is the amount signal the model leans on (and why small frauds slip through, backlog 7).
+
 **Design-rule trade-off (be ready to explain):** our DESIGN.md had adopted tasteskill's "no borders, separate by tone" rules. tasteskill is built for public marketing pages, and on a data dashboard I found the tone-only version too flat when I actually used it. I changed it deliberately and recorded the override in DESIGN.md. The tasteskill checks still run: the table's lines are marked as allowed (lines inside a real table are allowed by its own rules), and the one remaining warning (bordered boxes) is a documented choice.
 
 **Checked:** TypeScript, ESLint, tasteskill lint 0/0, inspector 0 FAIL / 1 defended WARN, Google Sans on 100% of text, and all new colour pairs ≥ 4.5:1 (lowest 4.7:1). Found while checking: the dev server kept serving the **old** body CSS (the same stale-cache gotcha as before), so the page background stayed white until a cache-cleared restart.
@@ -862,3 +866,4 @@ The table's header row also takes the selected card's tint (light red / amber / 
 | 2026-10-18 | Full-width layout; ask panel fixed 420px on the right, "Ask the AI analyst" | Panel easier to find and understand; the table uses the space |
 | 2026-10-18 | Stat cards tinted by risk on hover/selection; **Low = green** (my choice over blue-grey) | Card colour shows meaning before clicking; trade-off ("green ≠ safe") documented in DESIGN.md |
 | 2026-10-18 | Low badges green too: `risk-low` token itself recoloured (supersedes "blue-grey for low") | One colour per risk level across cards, header and badges |
+| 2026-10-18 | `/stats` adds `medium_risk_amount` + `low_risk_amount`; table summary describes the selected group | The sentence must match the rows on screen; additive change, no client breaks |

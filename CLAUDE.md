@@ -48,7 +48,7 @@ Next.js dashboard (:3100) ──fetch──▶ FastAPI (:8000) ──▶ Postgre
   - `POST /transactions` validates, strips the `fraud_` merchant prefix, inserts, fetches minimal
     history (last hour + first visit to the same merchant), scores, embeds, and writes `risk_scores`,
     all in **one DB transaction**. Returns 409 on a duplicate `trans_num`, 422 on bad input.
-  - `GET /stats`, `GET /transactions?risk_level=&limit=&offset=`, `GET /transactions/{id}`:
+  - `GET /stats` (counts + total / high / medium / low amounts), `GET /transactions?risk_level=&limit=&offset=`, `GET /transactions/{id}`:
     read-only, return card last 4 only.
   - `POST /ask` does hybrid retrieval (keyword filters for risk level / time of day / category +
     pgvector top 10 + SQL stats), then a grounded LLM answer, then citation verification. The DB

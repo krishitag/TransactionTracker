@@ -2,12 +2,30 @@
 
 import { useEffect, useState } from "react";
 import { getStats, getTransactions, type RiskLevel, type Stats, type TransactionPage } from "@/lib/api";
-import { formatMoneyWhole, formatPercent } from "@/lib/format";
+import { formatCount, formatMoneyWhole, formatPercent } from "@/lib/format";
 import AskPanel from "./AskPanel";
 import StatBand from "./StatBand";
 import TransactionTable from "./TransactionTable";
 
 const PAGE_SIZE = 20;
+
+// The line under the table title describes the rows on screen: the high-risk share for "All",
+// otherwise the selected group's own count and money.
+function summaryLine(stats: Stats, filter: RiskLevel | null) {
+  if (!filter) {
+    return `${formatMoneyWhole(stats.high_risk_amount)} of ${formatMoneyWhole(stats.total_amount)} (${formatPercent(
+      stats.high_risk_amount,
+      stats.total_amount,
+    )}) sits in high-risk transactions.`;
+  }
+  const amount = stats[`${filter}_risk_amount`] as number | undefined;
+  // An older backend has no per-group amounts: show the count rather than "$NaN".
+  if (amount === undefined) return `${formatCount(stats[filter])} ${filter}-risk transactions.`;
+  return `${formatCount(stats[filter])} transactions worth ${formatMoneyWhole(amount)}, ${formatPercent(
+    amount,
+    stats.total_amount,
+  )} of all money.`;
+}
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -85,12 +103,7 @@ export default function Dashboard() {
             <h2 id="table-heading" className="text-heading text-ink text-balance">
               {filter ? `${filter[0].toUpperCase()}${filter.slice(1)}-risk transactions` : "All transactions"}
             </h2>
-            {stats && (
-              <p className="mt-1 max-w-[60ch] text-body text-ink-secondary">
-                {formatMoneyWhole(stats.high_risk_amount)} of {formatMoneyWhole(stats.total_amount)} (
-                {formatPercent(stats.high_risk_amount, stats.total_amount)}) sits in high-risk transactions.
-              </p>
-            )}
+            {stats && <p className="mt-1 max-w-[60ch] text-body text-ink-secondary">{summaryLine(stats, filter)}</p>}
             {error && (
               <p role="alert" className="mt-4 bg-risk-high-wash px-4 py-3 text-body text-risk-high">
                 {error}

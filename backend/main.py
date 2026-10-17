@@ -196,7 +196,9 @@ def stats():
                count(*) FILTER (WHERE r.risk_level = 'high')     AS high,
                count(*) FILTER (WHERE r.risk_level = 'medium')   AS medium,
                count(*) FILTER (WHERE r.risk_level = 'low')      AS low,
-               coalesce(sum(t.amount) FILTER (WHERE r.risk_level = 'high'), 0)::float AS high_risk_amount,
+               coalesce(sum(t.amount) FILTER (WHERE r.risk_level = 'high'), 0)::float   AS high_risk_amount,
+               coalesce(sum(t.amount) FILTER (WHERE r.risk_level = 'medium'), 0)::float AS medium_risk_amount,
+               coalesce(sum(t.amount) FILTER (WHERE r.risk_level = 'low'), 0)::float    AS low_risk_amount,
                coalesce(sum(t.amount), 0)::float                  AS total_amount
           FROM transactions t
           JOIN risk_scores r ON r.transaction_id = t.id

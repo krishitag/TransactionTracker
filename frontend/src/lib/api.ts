@@ -10,6 +10,8 @@ export type Stats = {
   medium: number;
   low: number;
   high_risk_amount: number;
+  medium_risk_amount: number;
+  low_risk_amount: number;
   total_amount: number;
   model_version: string;
 };
