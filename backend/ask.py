@@ -279,9 +279,9 @@ def gemini_keys():
 
 
 def gemini_client(slot, key):
+    import httpx
     from google import genai
     from google.genai import types
-    import httpx
 
     name = f"gemini{slot}"
     if name not in _clients:

@@ -7,7 +7,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 ## Right now
 
 - **Current phase:** Phases A–D done → **Phase E (ship) next**
-- **Next task:** Phase E: Dockerfile, GitHub Actions, README, deploy.
+- **Next task:** E1, tests + GitHub Actions (then E2 Dockerfile → E3 Neon → E4 Render → E5 Vercel → E6 README).
 - **Run it:** `docker compose up -d` (repo root) · `venv/bin/uvicorn main:app` (backend/) · `npm run dev` (frontend/, port **3100**)
 - Frontend tools installed: tasteskill (`design-taste-frontend`), `web-design-guidelines`, `playwright-cli` (uses your Chrome). Design system: `DESIGN.md` (blue). Disk ~1.7 GB free.
 - **Improvement backlog:**
@@ -80,7 +80,12 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 | # | Task | Status |
 |---|---|---|
-| E10 | Dockerfile, GitHub Actions (lint + pytest), README, deploy (Render + Vercel) | ⬜ |
+| E1 | pytest (features, scorer, Gemini key fallback, citation check) + small committed data sample + GitHub Actions (Python lint + tests, frontend tsc + ESLint + build) | 🟡 43/43 pass locally, ruff clean; first CI run pending (push) |
+| E2 | Dockerfile for the backend (CPU-only torch, embedding model baked in at build) | ⬜ |
+| E3 | Neon Postgres + pgvector: schema, seed the 2,440 transactions | ⬜ |
+| E4 | Backend on Render (Docker; env vars for DB, Gemini keys, `FRONTEND_ORIGINS`); check memory fits 512 MB | ⬜ |
+| E5 | Dashboard on Vercel (`frontend/`, `NEXT_PUBLIC_API_URL`), then CORS for the Vercel URL | ⬜ |
+| E6 | README: what, screenshot, live link, architecture, model, results + limitations, run locally, dataset link | 🟡 README + RESULTS.md + `backend/.env.example` written; live link and CI badge go green after deploy / first CI run |
 
 ## Change log
 
@@ -88,6 +93,9 @@ Add one line every time something moves.
 
 - **2026-10-17:** Manual test, sections 1–3 (load, stat-band filter, table/pagination/reasons) pass. Ask panel timed out at 60s: Gemini returned 504 "deadline expired" twice and then 429 (Google-side overload/quota), and our backend's retry budget (2 × 45s) outlasted the browser's 60s, hiding the real error. Fixed in `ask.py`: 1 attempt × 40s, 50s total budget, clear "overloaded" message on 503/504, and an optional backup key `GEMINI_API_KEY_2` used only on 429 (60s cooldown on a limited key). 10/10 offline fallback tests pass. Live: first retry showed the new "overloaded" message (Google still busy), next retry answered; every claim in the late-night online shopping answer checked against SQL (stats + 8 transactions, all correct). Backup keys generalised to `GEMINI_API_KEY_2`…`_5` (12/12 offline tests). Citation click (#1945) and the Mumbai trap question pass. Two more 502s (not 429s), so added `GEMINI_THINKING` (default low) to cut answer time, plus a log line for every Gemini success/failure with code and duration (14/14 offline tests). Live: thinking low accepted; "large travel purchases at night" answered correctly but hedged (SQL: 14 txns, max $9.12). Found small-amount fraud blind spot (backlog 7).
 - **2026-10-18:** D9d built (journal §25): four bordered stat cards with share lines, full-width layout, "Ask the AI analyst" panel fixed on the right with a navy header, table as a white card with a blue header and row lines, blue-50…300 scale, Google Sans. tsc, ESLint, tasteskill lint 0/0, inspector 0 FAIL / 1 defended WARN, contrast ≥ 4.7:1. The dev server served stale body CSS (page stayed white), so it needs a restart with `.next` cleared.
+- **2026-10-18:** README.md (with the verified Kaggle link: "Credit Card Transactions Fraud Detection Dataset", Kartik Shenoy, CC0, Sparkov), RESULTS.md (all numbers from the journal; Medium fraud count 28 checked with SQL), `docs/dashboard.png`, `backend/.env.example`. Local run of E1: 43 passed; ruff flagged 1 import order in `ask.py` (fixed).
+- **2026-10-18:** E1 written (journal §26): `backend/tests/` (features, scoring, ask), 200-row sample `tests/data/sample.csv` (PR-AUC 0.59 vs 0.10 baseline), `pyproject.toml` (pytest + ruff config), `requirements-dev.txt`, `.github/workflows/ci.yml` (backend ruff + pytest with CPU torch; frontend tsc + ESLint + build).
+- **2026-10-18:** Phase E planned: Vercel (dashboard) → Render (Docker backend) → **Neon** (Postgres + pgvector, chosen over Render Postgres, which expires after 30 days, and Supabase, which pauses). Order: tests/CI first. Risks noted: Render free = 512 MB RAM (backend 167 MB on Mac; measure on Linux; ONNX fallback), free servers sleep after 15 min, Gemini free-tier limits. Disk now 111 GB free.
 - **2026-10-18:** Table summary line now matches the selected filter (option A): `/stats` adds `medium_risk_amount` / `low_risk_amount` (High $108,017 = 42%, Medium $19,292 = 7%, Low $130,932 = 51% of $258,240, checked with SQL). Frontend falls back to the count on an older backend. Verified live after the backend restart and a page refresh (Medium: "113 transactions worth $19,292, 7% of all money").
 - **2026-10-18:** **D9d done, so Phase D is complete.** Low badges green (the `risk-low` token itself is now green). Vercel audit: removed a redundant wrapper and added `overscroll-contain` to the AI panel; the rest passes (deliberate exceptions: sentence case, URL state = backlog 5). Inspector 0 FAIL, 1 defended WARN; page background confirmed `#f3f7fd`. Open: the table summary line always describes high-risk money, even on the Medium/Low views.
 - **2026-10-18:** D9d round 5: the table header row takes the selected filter's tint (red / amber / green, blue for All). Checked in Playwright for all three risk filters.

@@ -5,6 +5,9 @@ Built by Krishita as a portfolio project for software engineering internship app
 companies (first target: Visa 2027 SWE Intern, Technology, India). Public copy is for any company.
 Repo: https://github.com/krishitag/TransactionTracker
 
+Public docs: `README.md` (front page) and `RESULTS.md` (measured numbers + limitations; every figure must
+trace to a journal section or a query, never estimated). Keep both in sync when results change.
+
 **Read first, every session:** `STATUS.md` (where things stand, backlog, change log) and
 `PROJECT_JOURNAL.md` (every decision in plain words, with interview lines). Update both whenever a
 task moves. `DESIGN.md` is the single design source for all UI.
@@ -55,6 +58,11 @@ Next.js dashboard (:3100) ──fetch──▶ FastAPI (:8000) ──▶ Postgre
     session is closed before the LLM call.
   - CORS allows only `FRONTEND_ORIGINS` (default `http://localhost:3100`).
 - `schema.sql` (fresh DB) and `migrations/001_add_embeddings.sql` (existing DB).
+- **Tests:** `backend/tests/` (pytest; config in `backend/pyproject.toml`). Run from backend/:
+  `venv/bin/python -m pytest` and `venv/bin/ruff check .`. No DB, network or keys needed (fake Gemini
+  client; 200-row committed sample `tests/data/sample.csv` from `tests/make_sample.py`, seed 42).
+  Tools are in `requirements-dev.txt`. CI: `.github/workflows/ci.yml` (backend ruff + pytest with
+  CPU torch; frontend tsc + ESLint + `next build`). Update `test_model_is_v2` deliberately after a retrain.
 - `seed_transactions.py` loads 2,440 real `fraudTest.csv` rows (40 cards, 207 fraud; fraud-heavy on
   purpose) through the API. `backfill_embeddings.py` (`--all` to rebuild). `queries.sql` holds saved
   exploration SQL.
@@ -113,7 +121,7 @@ Dashboard at http://localhost:3100. The backend takes ~30s to start (embedding m
 - **Postgres runs on 5433** (Homebrew Postgres owns 5432). The image is `pgvector/pgvector:pg16`.
   Switching images once caused a collation mismatch; the fix was a fresh DB (prod fix: REINDEX + REFRESH
   COLLATION VERSION).
-- The Mac's disk is nearly full (~1.7 GB free). Avoid large installs; tell the user before any.
+- Disk: ~111 GB free as of 2026-10-18 (was ~1.7 GB earlier). Still tell the user before large installs.
 - Network can be flaky: use `pip install --timeout 120 --retries 10 --resume-retries 50`.
 - Don't commit `data/*.csv` (GitHub's 100 MB limit). `.taste-skill/` and `.playwright-cli/` are
   gitignored working folders.

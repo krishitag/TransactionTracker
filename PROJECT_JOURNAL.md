@@ -801,6 +801,29 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 
 ---
 
+## 26. Phase E plan, and E1: tests + GitHub Actions
+
+**Phase E plan:** dashboard on **Vercel**, backend as a Docker container on **Render**, database on **Neon** (free Postgres with pgvector that doesn't expire; Render's free Postgres is deleted after 30 days, and Supabase's pauses). Order: tests and CI first (nothing goes online yet), then Dockerfile → Neon → Render → Vercel → README. Known risks: Render's free plan has 512 MB of memory (PyTorch is the heavy part; ONNX is the fallback), free servers sleep after 15 minutes idle (a slow first visit), and Gemini free-tier limits.
+
+**E1, what a test is:** a small piece of code that runs the real code with a known input and checks the answer. If a later change breaks something, the test fails and names it.
+
+**The tests (`backend/tests/`):**
+- `test_features.py`: night-window edges (22:00 and 03:59 in, 04:00 out), payments-in-the-last-hour (counts earlier payments, ignores anything over an hour ago and other cards), first visit to a merchant per card, haversine (1° of latitude ≈ 111 km), and rows in any order.
+- `test_scoring.py`: the exact risk-band edges (0.90 / 0.8999 / 0.70 / 0.6999), the model fingerprint `f683e347ae3d`, obvious cases (a $1,000 first-time purchase at 23:15 → High with three reasons; a $40 daytime repeat → Low with "no unusual signals"), the journal §19 example ($300 first-time purchase: Low at 14:15, Medium at 23:15), the `fraud_` prefix never shown, and a **quality safety net** on a committed 200-row real sample.
+- `test_ask.py`: question filters ("late-night online shopping", "far from home" isn't a category), citation checking (made-up IDs removed, real ones kept once), and all the Gemini backup-key and time-budget rules from §23, using a fake Gemini, so no network and no API keys.
+
+**The sample:** `tests/data/sample.csv`, 200 real rows from `fraudTest.csv` (20 fraud), about 31 KB, built by `tests/make_sample.py` with a fixed seed so it can be rebuilt identically. On it the model scores PR-AUC 0.59 against a random 0.10, and frauds average 0.77 against 0.22. The test only demands more than 4× random and a 0.3 gap, so it catches a broken model without failing on noise.
+
+**GitHub Actions (`.github/workflows/ci.yml`):** on every push, two jobs run in parallel. Backend: Python 3.12, CPU-only PyTorch (CI has no GPU, and it's a much smaller download), `ruff check` (lint), then `pytest`. Frontend: `npm ci`, TypeScript, ESLint, and `next build`, which proves it compiles for production the way Vercel will build it. Test tools live in `requirements-dev.txt`, so the deployed server doesn't carry them.
+
+**First run:** 43 passed locally. ruff found one issue (import order inside `gemini_client`), fixed.
+
+**README + RESULTS.md:** the README is the repo's front page (what it does, a screenshot, key results, architecture, the exact dataset link, how to run it). RESULTS.md holds every measured number with its journal section, plus the limitations. Two rules I held to: no number that wasn't measured (the one missing figure, Medium-band fraud = 28, was checked with SQL rather than derived), and the limitations sit next to the results instead of being hidden. The dataset link was verified through Kaggle's API: "Credit Card Transactions Fraud Detection Dataset" by Kartik Shenoy, CC0, generated with Sparkov.
+
+**Interview line:** "I added unit tests for the feature maths, the risk bands and the explanations, a model-quality safety net on a committed real-data sample, and tests for the LLM fallback logic using a fake client, so CI never needs network or API keys. GitHub Actions runs lint, tests and a production frontend build on every push."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -867,3 +890,6 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 | 2026-10-18 | Stat cards tinted by risk on hover/selection; **Low = green** (my choice over blue-grey) | Card colour shows meaning before clicking; trade-off ("green ≠ safe") documented in DESIGN.md |
 | 2026-10-18 | Low badges green too: `risk-low` token itself recoloured (supersedes "blue-grey for low") | One colour per risk level across cards, header and badges |
 | 2026-10-18 | `/stats` adds `medium_risk_amount` + `low_risk_amount`; table summary describes the selected group | The sentence must match the rows on screen; additive change, no client breaks |
+| 2026-10-18 | Deploy: Vercel (frontend) + Render Docker (backend) + **Neon** (Postgres + pgvector) | All free; Neon doesn't expire (Render DB: 30 days) or pause (Supabase) |
+| 2026-10-18 | Tests/CI before deploying; 200-row committed sample (fixed seed); fake LLM client in tests | Safe first step; CI needs no data download, DB, network or keys |
+| 2026-10-18 | ruff with default rules + import sorting (not flake8-bugbear) | Bugbear flags FastAPI's standard `Query()` defaults; keep lint signal high |

@@ -1,0 +1,15 @@
+# Tool settings only (the backend is not a package). Run from backend/:
+#   venv/bin/python -m pytest      venv/bin/ruff check .
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["venv"]
+src = ["."]  # so ruff knows features/scoring/ask are this project's own modules
+
+[tool.ruff.lint]
+# Default rules (unused imports/variables, undefined names, syntax errors) plus import sorting.
+extend-select = ["I"]

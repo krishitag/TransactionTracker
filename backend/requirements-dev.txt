@@ -1,0 +1,4 @@
+# Test and lint tools: local + CI only, not installed on the deployed server.
+-r requirements.txt
+pytest==8.4.2
+ruff==0.13.3
