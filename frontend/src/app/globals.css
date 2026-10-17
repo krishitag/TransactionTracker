@@ -18,13 +18,9 @@
   --color-risk-high-wash: #fdecef;
   --color-risk-medium: #8a5a12;
   --color-risk-medium-wash: #fbf1e1;
-  --color-risk-low: #3f5873;
-  --color-risk-low-wash: #eef2f7;
-
-  /* Stat-card tint for the Low card (D9d, user's choice: green). Hover borders use each
-     card's status colour at 50%. */
-  --color-low-green: #1d6b3f;
-  --color-low-green-wash: #e8f5ed;
+  /* Low is green (user's choice, 2026-10-18; was blue-grey #3f5873 / #eef2f7). */
+  --color-risk-low: #1d6b3f;
+  --color-risk-low-wash: #e8f5ed;
 
   /* Blue scale: one step per surface (page, header rows, borders, action, navy). */
   --color-blue-50: #f3f7fd;   /* page background */

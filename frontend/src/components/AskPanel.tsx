@@ -89,7 +89,7 @@ export default function AskPanel({ total }: { total?: number }) {
       </div>
 
       {/* Long answers scroll inside the panel, so the sticky panel never runs off the screen. */}
-      <div className="flex flex-col gap-4 overflow-y-auto p-5">
+      <div className="flex flex-col gap-4 overflow-y-auto overscroll-contain p-5">
       <form
         onSubmit={(e) => {
           e.preventDefault();

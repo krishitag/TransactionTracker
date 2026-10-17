@@ -48,10 +48,10 @@ const ITEMS: {
     filter: "low",
     label: "Low risk",
     key: "low",
-    figureClass: "text-low-green",
-    hover: "hover:border-low-green/50 hover:bg-low-green-wash/60",
-    selected: "border-low-green bg-low-green-wash",
-    selectedText: "text-low-green",
+    figureClass: "text-risk-low",
+    hover: "hover:border-risk-low/50 hover:bg-risk-low-wash/60",
+    selected: "border-risk-low bg-risk-low-wash",
+    selectedText: "text-risk-low",
   },
 ];
 

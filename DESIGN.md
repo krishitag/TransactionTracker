@@ -23,8 +23,8 @@ colors:
   risk-high-wash: "#fdecef"
   risk-medium: "#8a5a12"
   risk-medium-wash: "#fbf1e1"
-  risk-low: "#3f5873"
-  risk-low-wash: "#eef2f7"
+  risk-low: "#1d6b3f"        # green since 2026-10-18 (was blue-grey #3f5873)
+  risk-low-wash: "#e8f5ed"   # (was #eef2f7)
 
   # Blue scale (2026-10-18, D9d): one step per dashboard surface.
   blue-50: "#f3f7fd"         # page background
@@ -77,7 +77,7 @@ Each conflict was decided once and applies to **both** surfaces.
 | Font | Sohne (proprietary) | **Inter**, one family, `ss01` on; `tnum` on every number |
 | Buttons | Pills | **Pills**, flat fill, no gradient |
 | Stat tiles | Card grid | **One stat band**: figures set large on a `canvas-blue` field, separated by space, not boxed cards |
-| Risk colours | Not defined | Red / amber / blue-grey **badges only**, always with the word (never colour alone) |
+| Risk colours | Not defined | Red / amber / green (green since 2026-10-18; was blue-grey) on badges, always with the word (never colour alone) |
 
 **Dashboard revision, 2026-10-18 (D9d, my choice after manual testing).** The flat stat band and the tone-only table
 didn't read as distinct surfaces, so the dashboard now overrides three of the rules above:
@@ -86,9 +86,10 @@ didn't read as distinct surfaces, so the dashboard now overrides three of the ru
 |---|---|---|
 | Stat figures | One band, no boxes | **Four cards**: white, 2px `blue-100` border, 12px radius. Each is tinted by what it counts: All = blue, High = red, Medium = amber, **Low = green**. Hover = faint tint (wash at 60%) + border in the card's colour at 50%; selected = full wash + 2px border in the card's colour + "Showing" in that colour. The **figures** are in their card's colour too (High red, Medium amber, Low green; All in ink) |
 
-> **Low card is green (my choice, 2026-10-18).** Trade-off I accepted: green can read as "safe", but Low only
-> means the model wasn't worried. 53 real frauds were scored Low (33 of them under $20). The Low **badges** in
-> the table stay blue-grey for now. Green tokens: `low-green #1d6b3f`, `low-green-wash #e8f5ed`.
+> **Low is green everywhere (my choice, 2026-10-18): card, table header and badges.** Trade-off I accepted:
+> green can read as "safe", but Low only means the model wasn't worried. 53 real frauds were scored Low
+> (33 of them under $20). Tokens: `risk-low` is now `#1d6b3f` and `risk-low-wash` is `#e8f5ed` (they were blue-grey
+> `#3f5873` / `#eef2f7`).
 > "Yellow" for Medium is the existing amber `risk-medium` (5.9:1 on white); a bright yellow fails contrast (2.0:1).
 > All text ≥ 4.8:1 on its tint.
 | Surfaces | Tone steps only, no borders | Page on `blue-50`; table and ask panel are **white cards with a 1px `blue-200` border**, 12px radius |

@@ -97,10 +97,8 @@ export default function Dashboard() {
               </p>
             )}
           </div>
-          <div>
-            <div className="overflow-x-auto">
-              <TransactionTable page={loaded?.page ?? null} loading={loading} filter={filter} onPageChange={changePage} />
-            </div>
+          <div className="overflow-x-auto">
+            <TransactionTable page={loaded?.page ?? null} loading={loading} filter={filter} onPageChange={changePage} />
           </div>
         </section>
 

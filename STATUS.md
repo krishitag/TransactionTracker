@@ -6,8 +6,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 
 ## Right now
 
-- **Current phase:** Phases A–C done · **Phase D (frontend) nearly done** (only the Vercel audit on the restyle is left) → Phase E (ship) next
-- **Next task:** Vercel web-design-guidelines audit on the restyle; then the open questions (Low badges green? summary line per filter?), then Phase E.
+- **Current phase:** Phases A–D done → **Phase E (ship) next**
+- **Next task:** decide the table summary line (option A or B, see change log 2026-10-18), then Phase E: Dockerfile, GitHub Actions, README, deploy.
 - **Run it:** `docker compose up -d` (repo root) · `venv/bin/uvicorn main:app` (backend/) · `npm run dev` (frontend/, port **3100**)
 - Frontend tools installed: tasteskill (`design-taste-frontend`), `web-design-guidelines`, `playwright-cli` (uses your Chrome). Design system: `DESIGN.md` (blue). Disk ~1.7 GB free.
 - **Improvement backlog:**
@@ -74,7 +74,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 | D9a | Backend for the dashboard: `GET /stats`, `GET /transactions` (filter + pagination), `GET /transactions/{id}`, CORS for the dashboard origin (localhost:3100) | ✅ |
 | D9b | Next.js dashboard: stat band (doubles as filter), transaction table with risk badges and reasons, ask panel with clickable citations | ✅ built, checked by tools, and manually tested 18/18 (4 /ask answers verified against SQL) |
 | D9c | ~~Project showcase page~~ moved out: separate personal portfolio site (own repo, later) | ➖ out of scope here |
-| D9d | Dashboard restyle: risk-tinted stat cards, blue scale, bordered table with tinted header, AI panel on the right, Google Sans | ✅ approved by you 2026-10-18 (tsc, ESLint, tasteskill lint, Playwright, contrast); Vercel audit still to run |
+| D9d | Dashboard restyle: risk-tinted stat cards, blue scale, bordered table with tinted header, green Low badges, AI panel on the right, Google Sans | ✅ approved by you; tsc, ESLint, tasteskill lint + inspector, Playwright, contrast, Vercel audit (2 small fixes) |
 
 ## Phase E: Ship
 
@@ -88,6 +88,7 @@ Add one line every time something moves.
 
 - **2026-10-17:** Manual test, sections 1–3 (load, stat-band filter, table/pagination/reasons) pass. Ask panel timed out at 60s: Gemini returned 504 "deadline expired" twice and then 429 (Google-side overload/quota), and our backend's retry budget (2 × 45s) outlasted the browser's 60s, hiding the real error. Fixed in `ask.py`: 1 attempt × 40s, 50s total budget, clear "overloaded" message on 503/504, and an optional backup key `GEMINI_API_KEY_2` used only on 429 (60s cooldown on a limited key). 10/10 offline fallback tests pass. Live: first retry showed the new "overloaded" message (Google still busy), next retry answered; every claim in the late-night online shopping answer checked against SQL (stats + 8 transactions, all correct). Backup keys generalised to `GEMINI_API_KEY_2`…`_5` (12/12 offline tests). Citation click (#1945) and the Mumbai trap question pass. Two more 502s (not 429s), so added `GEMINI_THINKING` (default low) to cut answer time, plus a log line for every Gemini success/failure with code and duration (14/14 offline tests). Live: thinking low accepted; "large travel purchases at night" answered correctly but hedged (SQL: 14 txns, max $9.12). Found small-amount fraud blind spot (backlog 7).
 - **2026-10-18:** D9d built (journal §25): four bordered stat cards with share lines, full-width layout, "Ask the AI analyst" panel fixed on the right with a navy header, table as a white card with a blue header and row lines, blue-50…300 scale, Google Sans. tsc, ESLint, tasteskill lint 0/0, inspector 0 FAIL / 1 defended WARN, contrast ≥ 4.7:1. The dev server served stale body CSS (page stayed white), so it needs a restart with `.next` cleared.
+- **2026-10-18:** **D9d done, so Phase D is complete.** Low badges green (the `risk-low` token itself is now green). Vercel audit: removed a redundant wrapper and added `overscroll-contain` to the AI panel; the rest passes (deliberate exceptions: sentence case, URL state = backlog 5). Inspector 0 FAIL, 1 defended WARN; page background confirmed `#f3f7fd`. Open: the table summary line always describes high-risk money, even on the Medium/Low views.
 - **2026-10-18:** D9d round 5: the table header row takes the selected filter's tint (red / amber / green, blue for All). Checked in Playwright for all three risk filters.
 - **2026-10-18:** D9d round 4: hover borders in each card's colour (50%), and the Medium/Low figures in amber/green like High's red. Verified in Playwright: tints, borders, green and the blue-50 page background all render now (the dev server picked up the tokens).
 - **2026-10-18:** D9d round 3: stat cards tinted by risk on hover and selection (All blue, High red, Medium amber, Low green: your choice, trade-off in DESIGN.md). Contrast ≥ 4.8:1. Playwright: High and Medium tints render; Low green doesn't yet, because the dev server's stale cache lacks the new tokens (needs a `.next`-cleared restart).

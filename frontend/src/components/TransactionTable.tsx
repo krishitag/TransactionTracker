@@ -13,7 +13,7 @@ const HEADER_TONE = {
   all: "border-blue-200 bg-blue-100",
   high: "border-risk-high/30 bg-risk-high-wash",
   medium: "border-risk-medium/30 bg-risk-medium-wash",
-  low: "border-low-green/30 bg-low-green-wash",
+  low: "border-risk-low/30 bg-risk-low-wash",
 } as const;
 
 export function Reasons({ txn }: { txn: Transaction }) {
