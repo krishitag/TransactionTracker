@@ -100,6 +100,9 @@ Each conflict was decided once and applies to **both** surfaces.
 
 ## Showcase page (public, built with tasteskill)
 
+> 2026-10-18: no longer built in this repo. It becomes a separate personal portfolio site, which may
+> reuse these tokens. The dashboard is the only surface here.
+
 Follows the full tasteskill run (direction, idea, copy deck, inspector, critique, motion layer),
 inside these tokens. Imagery is the real dashboard interface (screenshots and interface fragments),
 never invented proof or statistics.

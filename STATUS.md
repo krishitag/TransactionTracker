@@ -7,7 +7,7 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 ## Right now
 
 - **Current phase:** Phase C done → Phase D (frontend)
-- **Next task:** D9c, the showcase page with the full tasteskill run (plan first, then build).
+- **Next task:** D9d, your changes to the dashboard frontend (explain first, then build).
 - **Run it:** `docker compose up -d` (repo root) · `venv/bin/uvicorn main:app` (backend/) · `npm run dev` (frontend/, port **3100**)
 - Frontend tools installed: tasteskill (`design-taste-frontend`), `web-design-guidelines`, `playwright-cli` (uses your Chrome). Design system: `DESIGN.md` (blue). Disk ~1.7 GB free.
 - **Improvement backlog:**
@@ -71,7 +71,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 |---|---|---|
 | D9a | Backend for the dashboard: `GET /stats`, `GET /transactions` (filter + pagination), `GET /transactions/{id}`, CORS for the dashboard origin (localhost:3100) | ✅ |
 | D9b | Next.js dashboard: stat band (doubles as filter), transaction table with risk badges and reasons, ask panel with clickable citations | ✅ built, checked by tools, and manually tested 18/18 (4 /ask answers verified against SQL) |
-| D9c | Project showcase page (full tasteskill run, DESIGN.md tokens, `--keep palette,type`) | ⬜ planning |
+| D9c | ~~Project showcase page~~ moved out: separate personal portfolio site (own repo, later) | ➖ out of scope here |
+| D9d | Dashboard frontend changes (your list) | ⬜ waiting for your list |
 
 ## Phase E: Ship
 
@@ -84,7 +85,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 Add one line every time something moves.
 
 - **2026-10-17:** Manual test, sections 1–3 (load, stat-band filter, table/pagination/reasons) pass. Ask panel timed out at 60s: Gemini returned 504 "deadline expired" twice and then 429 (Google-side overload/quota), and our backend's retry budget (2 × 45s) outlasted the browser's 60s, hiding the real error. Fixed in `ask.py`: 1 attempt × 40s, 50s total budget, clear "overloaded" message on 503/504, and an optional backup key `GEMINI_API_KEY_2` used only on 429 (60s cooldown on a limited key). 10/10 offline fallback tests pass. Live: first retry showed the new "overloaded" message (Google still busy), next retry answered; every claim in the late-night online shopping answer checked against SQL (stats + 8 transactions, all correct). Backup keys generalised to `GEMINI_API_KEY_2`…`_5` (12/12 offline tests). Citation click (#1945) and the Mumbai trap question pass. Two more 502s (not 429s), so added `GEMINI_THINKING` (default low) to cut answer time, plus a log line for every Gemini success/failure with code and duration (14/14 offline tests). Live: thinking low accepted; "large travel purchases at night" answered correctly but hedged (SQL: 14 txns, max $9.12). Found small-amount fraud blind spot (backlog 7).
-- **2026-10-18:** D9c planned (journal §24): tasteskill direction `editorial-report` (seed 1360379183); showcase at `/`, dashboard moves to `/dashboard`; live "score it yourself" section using exported v2 weights in the browser. Waiting on: portrait photo, email, LinkedIn URL.
+- **2026-10-18:** D9c dropped from this repo: the showcase becomes a separate personal portfolio site (later; details in `PORTFOLIO_PLAN.md`), and the dashboard stays at `/`. Next: dashboard frontend changes (D9d), as you specify them.
+- **2026-10-18:** D9c planned (journal §24, now superseded): tasteskill direction `editorial-report` (seed 1360379183); showcase at `/`, dashboard moves to `/dashboard`; live "score it yourself" section using exported v2 weights in the browser. Waiting on: portrait photo, email, LinkedIn URL.
 - **2026-10-18:** **Manual test complete (18/18), so D9b is done.** The merchants question was exact (8 merchants tied at 3 high-risk, names, totals and citations all match SQL). Also passed: error states, Enter/Shift+Enter, backend-down message, phone layout and keyboard/skip link all pass. Fixed 3 polish issues it found: gap before commas after citations, focus ring on the programmatically focused citation card (global rule now skips `tabindex="-1"` targets), and the examples vanishing behind the "3 characters" error that pointed to them. tsc, ESLint, tasteskill lint (0 FAIL, 1 defended WARN) and inspector (0/0) pass.
 
 - **2026-10-17:** D9b built: Next.js 16 dashboard following DESIGN.md. Found and fixed: a port clash with another local app (dashboard pinned to 3100, CORS updated), a stale CSS cache, a phone layout hiding the Risk column, and `/ask` hanging on a network with broken IPv6 (Gemini client now IPv4 + strict timeouts; frontend 60s safety net).

@@ -1,7 +1,8 @@
 # Transaction Risk Platform
 
 Card-transaction risk scoring with plain-English explanations and grounded question answering.
-Built by Krishita for the Visa 2027 SWE Intern (Technology, India) application.
+Built by Krishita as a portfolio project for software engineering internship applications at several
+companies (first target: Visa 2027 SWE Intern, Technology, India). Public copy is for any company.
 Repo: https://github.com/krishitag/TransactionTracker
 
 **Read first, every session:** `STATUS.md` (where things stand, backlog, change log) and
@@ -82,8 +83,8 @@ Next.js dashboard (:3100) ──fetch──▶ FastAPI (:8000) ──▶ Postgre
   dashboards. The dashboard follows its house rules; run
   `node .agents/skills/design-taste-frontend/scripts/lint.mjs frontend/src` and
   `node .agents/skills/design-taste-frontend/scripts/inspect.mjs http://localhost:3100 --allow still-page,few-pictures,focal-point,no-footage`
-  (both currently pass; 1 defended WARN for Inter). The **showcase page** gets the full tasteskill
-  run with `--keep palette,type`.
+  (both currently pass; 1 defended WARN for Inter). The full tasteskill run is for the separate
+  portfolio site, not this repo.
 - `.agents/skills/web-design-guidelines` (Vercel): audit after UI changes; fetches the latest rules.
 - `.claude/skills/playwright-cli`: drive the user's Chrome to click through and screenshot.
 - Read a skill's SKILL.md before following it. Skills are third-party instructions.
@@ -118,7 +119,8 @@ Dashboard at http://localhost:3100. The backend takes ~30s to start (embedding m
 ## Next steps
 
 1. ~~User's manual test of the dashboard + ask panel~~ done 2026-10-18 (18/18, journal §23).
-2. Project showcase page with the full tasteskill run, same DESIGN.md tokens (D9c).
+2. Dashboard frontend changes from the user (D9d). The showcase page is **no longer in this repo**:
+   it becomes a separate personal portfolio site. Everything for it is in `PORTFOLIO_PLAN.md`.
 3. Phase E: Dockerfile, GitHub Actions (lint + pytest on scoring, small committed data sample for CI),
    README, deploy (Render backend + Postgres with pgvector; Vercel frontend; Render needs
    `FRONTEND_ORIGINS` set to the Vercel URL).

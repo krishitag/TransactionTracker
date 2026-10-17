@@ -745,7 +745,9 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 
 ---
 
-## 24. Task D9c plan: the project showcase page
+## 24. Task D9c plan: the project showcase page (superseded the same day)
+
+> **Superseded 2026-10-18:** the showcase moves out of this repo and becomes a separate **personal portfolio site** linking all my projects, with this one as a case study. The dashboard stays at `/`. The plan below is kept for reference: the direction, idea and live scorer can be reused for the portfolio's case study for this project.
 
 **What:** a public page that explains the project to recruiters in 30 seconds and sends them to the live dashboard or the repo. It's built with the full tasteskill run, inside the DESIGN.md palette and Inter (`--keep palette,type`).
 
@@ -822,3 +824,4 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 | 2026-10-17 | Gemini thinking level LOW by default (`GEMINI_THINKING`) + log code/duration of every call | Grounded summaries don't need deep reasoning; slow thinking caused 504s; measure, don't guess |
 | 2026-10-18 | Showcase: tasteskill `editorial-report` direction, at `/`; dashboard → `/dashboard` | Findings-led content suits a report layout; recruiters land on the explanation first |
 | 2026-10-18 | Showcase live scorer runs exported v2 weights in the browser, tested against `scoring.py` | Works without the backend; proves the explanation is the real model |
+| 2026-10-18 | **No showcase in this repo; separate personal portfolio site instead** (supersedes the two rows above); dashboard stays at `/` | One portfolio links every project; this repo stays the product |
