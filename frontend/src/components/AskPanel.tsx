@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ask, getTransaction, type AskResponse, type Transaction } from "@/lib/api";
-import { formatDateTime, formatMoney } from "@/lib/format";
+import { formatCount, formatDateTime, formatMoney } from "@/lib/format";
 import AnswerText from "./AnswerText";
 import RiskBadge from "./RiskBadge";
 import { Reasons } from "./TransactionTable";
@@ -15,7 +15,7 @@ const EXAMPLES = [
   "Why were the high-risk transactions flagged?",
 ];
 
-export default function AskPanel() {
+export default function AskPanel({ total }: { total?: number }) {
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AskResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,14 +75,21 @@ export default function AskPanel() {
   const validIds = new Set(result?.citations.map((c) => c.id) ?? []);
 
   return (
-    <section id="ask" aria-labelledby="ask-heading" className="flex scroll-mt-4 flex-col gap-4 bg-canvas-soft p-6">
-      <div>
-        <h2 id="ask-heading" className="text-heading text-ink text-balance">Ask about these transactions</h2>
-        <p className="mt-1 max-w-[60ch] text-body text-ink-secondary">
-          Answers use only the data here and cite transaction numbers you can open.
+    <section
+      id="ask"
+      aria-labelledby="ask-heading"
+      className="flex scroll-mt-4 flex-col overflow-hidden rounded-xl border border-blue-200 bg-canvas lg:max-h-[calc(100svh-3rem)]"
+    >
+      <div className="bg-navy-900 px-5 py-4 text-white">
+        <h2 id="ask-heading" className="text-heading text-balance">Ask the AI analyst</h2>
+        <p className="mt-1 text-body text-white/90">
+          Ask a question in plain English. It reads {total ? `all ${formatCount(total)} transactions` : "every transaction"} and answers with transaction
+          numbers like #1945 that you can click to check.
         </p>
       </div>
 
+      {/* Long answers scroll inside the panel, so the sticky panel never runs off the screen. */}
+      <div className="flex flex-col gap-4 overflow-y-auto p-5">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -106,7 +113,7 @@ export default function AskPanel() {
           rows={3}
           maxLength={500}
           placeholder="Ask about merchants, categories, times…"
-          className="w-full resize-none rounded-[6px] border border-hairline bg-canvas px-3 py-2 text-body text-ink placeholder:text-ink-mute focus:border-accent"
+          className="w-full resize-none rounded-[6px] border border-blue-200 bg-canvas px-3 py-2 text-body text-ink placeholder:text-ink-mute focus:border-accent"
         />
         <button
           type="submit"
@@ -126,7 +133,7 @@ export default function AskPanel() {
               key={q}
               type="button"
               onClick={() => submit(q)}
-              className="min-h-10 rounded-full bg-canvas px-4 py-2 text-left text-table text-ink-secondary hover:bg-accent-wash hover:text-accent"
+              className="min-h-10 rounded-full bg-blue-50 px-4 py-2 text-left text-table text-ink-secondary hover:bg-accent-wash hover:text-accent"
             >
               {q}
             </button>
@@ -155,7 +162,7 @@ export default function AskPanel() {
           ref={citedRef}
           tabIndex={-1}
           aria-label={`Transaction ${cited.id}`}
-          className="flex flex-col gap-3 bg-canvas p-4"
+          className="flex flex-col gap-3 rounded-lg bg-blue-50 p-4"
         >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-body font-medium text-ink">
@@ -176,6 +183,7 @@ export default function AskPanel() {
           </button>
         </div>
       )}
+      </div>
     </section>
   );
 }

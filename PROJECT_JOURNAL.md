@@ -765,6 +765,36 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 
 ---
 
+## 25. Task D9d: dashboard restyle after manual testing
+
+**What I asked for (from using it):** the three stat figures weren't distinct, the AI panel sat too far left with an unclear heading, the table blended into the page, and I wanted more shades of blue and a Product Sans-style font.
+
+**What changed:**
+- **Stat cards:** four separate white cards with a border and rounded corners. The selected card gets a blue border, a light-blue fill and "Showing". Each card adds a share line ("6% of all", "$258,240 in total").
+- **Layout:** full width instead of capped at 1280px. The AI panel is a fixed 420px column on the right edge, stays visible while scrolling, and long answers scroll inside it.
+- **AI panel:** a navy header, "Ask the AI analyst", with a plain explanation: it reads all 2,440 transactions and answers with clickable transaction numbers.
+- **Table:** a white card on a light-blue page, a blue header row, alternating white / light-blue rows with thin blue lines, and slightly bolder amounts.
+- **Blue scale:** blue-50 / 100 / 200 / 300 added next to the existing accent and navy, one step per surface.
+- **Font: Google Sans.** Product Sans is Google's private brand font, but Google Sans (its successor) is now openly licensed on Google Fonts. `next/font` downloads it at build time and serves it from our own site, so there's no install and no request to Google from visitors' browsers.
+
+**Second round (after my look):** stat cards also get a very light blue fill on hover. The table's title and summary moved *inside* the table card as its header, so the table card and the AI panel start at the same height with titles in the same position. Before, the title sat above the table, the table started lower than the panel, and the two columns didn't line up.
+
+**Third round: risk-tinted cards.** Each stat card now takes its own colour on hover (faint) and when selected (full tint, 2px border, "Showing"): All blue, High red, Medium amber, Low green. The tints match the badge washes, so the cards and the table read as one system. Selected and hover differ by strength *and* by the word "Showing", so the state never depends on colour alone.
+
+Hover borders use each card's own colour at 50% strength, and the numbers are coloured too (Medium amber, Low green, like High's red). "Yellow" is the existing dark amber, because a true bright yellow scored 2.0:1 contrast on white (the minimum is 4.5:1) and would be unreadable.
+
+The table's header row also takes the selected card's tint (light red / amber / green, blue for All), so the table visibly belongs to the filter you picked.
+
+*Green for Low was my call, against the suggestion of blue-grey.* The argument against: "low risk" isn't "not fraud". 53 frauds were scored Low, most under $20 (card testing), and green can imply "safe". If asked, my answer is: *"Green marks the band the model is least concerned about, not 'safe'. That's why every card says 'risk', and why I track the frauds the Low band misses as the model's main blind spot."*
+
+**Design-rule trade-off (be ready to explain):** our DESIGN.md had adopted tasteskill's "no borders, separate by tone" rules. tasteskill is built for public marketing pages, and on a data dashboard I found the tone-only version too flat when I actually used it. I changed it deliberately and recorded the override in DESIGN.md. The tasteskill checks still run: the table's lines are marked as allowed (lines inside a real table are allowed by its own rules), and the one remaining warning (bordered boxes) is a documented choice.
+
+**Checked:** TypeScript, ESLint, tasteskill lint 0/0, inspector 0 FAIL / 1 defended WARN, Google Sans on 100% of text, and all new colour pairs ≥ 4.5:1 (lowest 4.7:1). Found while checking: the dev server kept serving the **old** body CSS (the same stale-cache gotcha as before), so the page background stayed white until a cache-cleared restart.
+
+**Interview line:** "After testing my own dashboard, I found the minimal tone-only design made the stats and table hard to tell apart, so I added a blue scale and bordered cards, switched to Google Sans, and moved the AI panel into a fixed right column with a clearer explanation. I recorded where I departed from my design system and why, and re-checked contrast for every new colour pair."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -825,3 +855,7 @@ This matches the test-set analysis: better high-risk detection and far fewer fal
 | 2026-10-18 | Showcase: tasteskill `editorial-report` direction, at `/`; dashboard → `/dashboard` | Findings-led content suits a report layout; recruiters land on the explanation first |
 | 2026-10-18 | Showcase live scorer runs exported v2 weights in the browser, tested against `scoring.py` | Works without the backend; proves the explanation is the real model |
 | 2026-10-18 | **No showcase in this repo; separate personal portfolio site instead** (supersedes the two rows above); dashboard stays at `/` | One portfolio links every project; this repo stays the product |
+| 2026-10-18 | Dashboard: bordered stat cards, table and panel on a blue-50 page; blue scale (supersedes "tone steps, no borders" for the dashboard) | Tone-only surfaces looked too flat in real use |
+| 2026-10-18 | **Google Sans** instead of Inter (supersedes "Inter, one family") | Closest open font to Product Sans (my choice); self-hosted by next/font |
+| 2026-10-18 | Full-width layout; ask panel fixed 420px on the right, "Ask the AI analyst" | Panel easier to find and understand; the table uses the space |
+| 2026-10-18 | Stat cards tinted by risk on hover/selection; **Low = green** (my choice over blue-grey) | Card colour shows meaning before clicking; trade-off ("green ≠ safe") documented in DESIGN.md |

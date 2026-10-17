@@ -21,7 +21,21 @@
   --color-risk-low: #3f5873;
   --color-risk-low-wash: #eef2f7;
 
-  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  /* Stat-card tint for the Low card (D9d, user's choice: green). Hover borders use each
+     card's status colour at 50%. */
+  --color-low-green: #1d6b3f;
+  --color-low-green-wash: #e8f5ed;
+
+  /* Blue scale: one step per surface (page, header rows, borders, action, navy). */
+  --color-blue-50: #f3f7fd;   /* page background */
+  --color-blue-100: #e6effc;  /* table header, alternate rows' hover, selected fill */
+  --color-blue-200: #c9dcf6;  /* card and table borders */
+  --color-blue-300: #9cbcee;  /* hover border */
+  --color-blue-600: #0b5fd3;  /* = accent */
+  --color-blue-700: #084aa6;  /* = accent-press */
+  --color-blue-900: #0a1f3d;  /* = navy-900 */
+
+  --font-sans: var(--font-google-sans), system-ui, -apple-system, sans-serif;
 
   /* The five type sizes DESIGN.md allows. */
   --text-display: 2.5rem;
@@ -49,10 +63,10 @@ textarea {
   touch-action: manipulation;
 }
 
+/* Light blue page so the white cards, table and panel stand off it. */
 body {
-  background: var(--color-canvas);
+  background: var(--color-blue-50);
   color: var(--color-ink);
-  font-feature-settings: "ss01";
 }
 
 /* Visible focus on every control (DESIGN.md accessibility). tabindex="-1" elements are

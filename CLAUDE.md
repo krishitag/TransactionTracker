@@ -72,8 +72,11 @@ Next.js dashboard (:3100) ──fetch──▶ FastAPI (:8000) ──▶ Postgre
 - `src/app/globals.css` holds the DESIGN.md tokens as Tailwind theme values. Use token classes only
   (`bg-accent`, `text-risk-high`, `text-display`), never raw hex.
 - `src/lib/api.ts` is the typed API client (`NEXT_PUBLIC_API_URL`, default `http://localhost:8000`).
-- Components: `Dashboard`, `StatBand` (the stat figures *are* the filter), `TransactionTable`
-  (tone-alternating rows; phone layout folds columns), `AskPanel` (60s timeout), `AnswerText`
+- Font: **Google Sans** via `next/font/google` (self-hosted, no install). Page on `blue-50`; white
+  bordered cards (DESIGN.md "Dashboard revision" D9d). Full-width layout, ask panel 420px on the right.
+- Components: `Dashboard`, `StatBand` (four stat cards that *are* the filter), `TransactionTable`
+  (white card, blue header row, alternating rows with lines; phone layout folds columns), `AskPanel`
+  ("Ask the AI analyst", navy header, 60s timeout, scrolls inside), `AnswerText`
   (safe renderer for LLM output: React elements only, never innerHTML), `RiskBadge`.
 - No shadcn/ui, no data-fetching library (deliberate).
 
@@ -83,7 +86,8 @@ Next.js dashboard (:3100) ──fetch──▶ FastAPI (:8000) ──▶ Postgre
   dashboards. The dashboard follows its house rules; run
   `node .agents/skills/design-taste-frontend/scripts/lint.mjs frontend/src` and
   `node .agents/skills/design-taste-frontend/scripts/inspect.mjs http://localhost:3100 --allow still-page,few-pictures,focal-point,no-footage`
-  (both currently pass; 1 defended WARN for Inter). The full tasteskill run is for the separate
+  (both pass; 1 defended inspector WARN `outlined-box` for the bordered table card and ask panel,
+  a deliberate D9d choice). The full tasteskill run is for the separate
   portfolio site, not this repo.
 - `.agents/skills/web-design-guidelines` (Vercel): audit after UI changes; fetches the latest rules.
 - `.claude/skills/playwright-cli`: drive the user's Chrome to click through and screenshot.

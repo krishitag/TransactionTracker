@@ -26,9 +26,15 @@ colors:
   risk-low: "#3f5873"
   risk-low-wash: "#eef2f7"
 
+  # Blue scale (2026-10-18, D9d): one step per dashboard surface.
+  blue-50: "#f3f7fd"         # page background
+  blue-100: "#e6effc"        # table header row, row hover, selected fill (= accent-wash)
+  blue-200: "#c9dcf6"        # card, table and panel borders
+  blue-300: "#9cbcee"        # card hover border
+
 typography:
-  family: "Inter, system-ui, -apple-system, sans-serif"   # one family only
-  features: "ss01"                                        # on body, globally
+  family: "Google Sans, system-ui, -apple-system, sans-serif"   # one family only (was Inter until 2026-10-18)
+  # Google Sans = open successor to Product Sans; variable 400-700, so display weight is 400, not 300.
   display-xl: { size: 56px, weight: 300, lineHeight: 1.03, tracking: -1.4px }   # showcase hero
   display-lg: { size: 40px, weight: 300, lineHeight: 1.05, tracking: -1.0px }   # stat figures
   heading:    { size: 22px, weight: 400, lineHeight: 1.2,  tracking: -0.2px }
@@ -73,6 +79,23 @@ Each conflict was decided once and applies to **both** surfaces.
 | Stat tiles | Card grid | **One stat band**: figures set large on a `canvas-blue` field, separated by space, not boxed cards |
 | Risk colours | Not defined | Red / amber / blue-grey **badges only**, always with the word (never colour alone) |
 
+**Dashboard revision, 2026-10-18 (D9d, my choice after manual testing).** The flat stat band and the tone-only table
+didn't read as distinct surfaces, so the dashboard now overrides three of the rules above:
+
+| Topic | Was | Now (dashboard only) |
+|---|---|---|
+| Stat figures | One band, no boxes | **Four cards**: white, 2px `blue-100` border, 12px radius. Each is tinted by what it counts: All = blue, High = red, Medium = amber, **Low = green**. Hover = faint tint (wash at 60%) + border in the card's colour at 50%; selected = full wash + 2px border in the card's colour + "Showing" in that colour. The **figures** are in their card's colour too (High red, Medium amber, Low green; All in ink) |
+
+> **Low card is green (my choice, 2026-10-18).** Trade-off I accepted: green can read as "safe", but Low only
+> means the model wasn't worried. 53 real frauds were scored Low (33 of them under $20). The Low **badges** in
+> the table stay blue-grey for now. Green tokens: `low-green #1d6b3f`, `low-green-wash #e8f5ed`.
+> "Yellow" for Medium is the existing amber `risk-medium` (5.9:1 on white); a bright yellow fails contrast (2.0:1).
+> All text ≥ 4.8:1 on its tint.
+| Surfaces | Tone steps only, no borders | Page on `blue-50`; table and ask panel are **white cards with a 1px `blue-200` border**, 12px radius |
+| Table rows | Alternating tone, no lines | Header row takes the selected card's tint (All `blue-100`, High `risk-high-wash`, Medium `risk-medium-wash`, Low `low-green-wash`); white / `blue-50` rows with a `blue-100` line between rows (real table) |
+| Font | Inter | **Google Sans** |
+| Ask panel | `canvas-soft` panel | White card with a `navy-900` header strip ("Ask the AI analyst"), fixed 420px on the right edge, scrolls inside |
+
 ## House rules (tasteskill v2, both surfaces)
 
 - No gradients, glass/backdrop blur, glows, emoji, decorative blobs or fake grey-bar dashboards.
@@ -112,6 +135,7 @@ never invented proof or statistics.
 | Surface | Allowed | Why |
 |---|---|---|
 | Dashboard | `still-page`, picture floor | An app screen: its content is the live data, not photographs or scroll motion. tasteskill itself is scoped to public pages |
+| Dashboard | WARN `outlined-box` (table card, ask panel); table lines marked `taste-skill-ignore` | Bordered cards are a deliberate D9d choice; lines inside a real `<table>` are allowed by tasteskill's own rules |
 | Showcase | none | Full house style applies |
 
 ## Accessibility

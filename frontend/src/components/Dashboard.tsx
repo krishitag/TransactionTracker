@@ -59,7 +59,7 @@ export default function Dashboard() {
         Skip to transactions
       </a>
       <header className="bg-navy-900 text-white">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-baseline justify-between gap-2 px-4 py-5 sm:px-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-5 sm:px-8">
           <h1 className="text-heading font-normal text-balance">Transaction Risk Monitor</h1>
           {/* On narrower screens the ask panel sits below the table; give it a first-screen action. */}
           <a
@@ -77,31 +77,35 @@ export default function Dashboard() {
 
       <StatBand stats={stats} active={filter} onSelect={selectFilter} />
 
-      <main id="main" className="mx-auto grid w-full max-w-7xl flex-1 gap-8 px-4 py-8 sm:px-8 lg:grid-cols-[minmax(0,1fr)_380px]">
-        {/* lg:pt-6 matches the ask panel's padding so both headings share one line. */}
-        <section aria-labelledby="table-heading" className="min-w-0 lg:pt-6">
-          <h2 id="table-heading" className="text-heading text-ink text-balance">
-            {filter ? `${filter[0].toUpperCase()}${filter.slice(1)}-risk transactions` : "All transactions"}
-          </h2>
-          {stats && (
-            <p className="mt-1 max-w-[60ch] text-body text-ink-secondary">
-              {formatMoneyWhole(stats.high_risk_amount)} of {formatMoneyWhole(stats.total_amount)} (
-              {formatPercent(stats.high_risk_amount, stats.total_amount)}) sits in high-risk transactions.
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="mt-4 bg-risk-high-wash px-4 py-3 text-body text-risk-high">
-              {error}
-            </p>
-          )}
-          {/* -mx-3 lets row tones extend past the text, so cell text (pl-3) sits on the page edge. */}
-          <div className="-mx-3 mt-2 overflow-x-auto">
-            <TransactionTable page={loaded?.page ?? null} loading={loading} onPageChange={changePage} />
+      {/* Full width: the table takes the space, the ask panel is a fixed column on the right edge. */}
+      <main id="main" className="grid w-full flex-1 gap-6 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_420px]">
+        {/* The table is a white card whose title sits inside it, level with the ask panel's title. */}
+        <section aria-labelledby="table-heading" className="min-w-0 self-start overflow-hidden rounded-xl border border-blue-200 bg-canvas">
+          <div className="px-4 py-4">
+            <h2 id="table-heading" className="text-heading text-ink text-balance">
+              {filter ? `${filter[0].toUpperCase()}${filter.slice(1)}-risk transactions` : "All transactions"}
+            </h2>
+            {stats && (
+              <p className="mt-1 max-w-[60ch] text-body text-ink-secondary">
+                {formatMoneyWhole(stats.high_risk_amount)} of {formatMoneyWhole(stats.total_amount)} (
+                {formatPercent(stats.high_risk_amount, stats.total_amount)}) sits in high-risk transactions.
+              </p>
+            )}
+            {error && (
+              <p role="alert" className="mt-4 bg-risk-high-wash px-4 py-3 text-body text-risk-high">
+                {error}
+              </p>
+            )}
+          </div>
+          <div>
+            <div className="overflow-x-auto">
+              <TransactionTable page={loaded?.page ?? null} loading={loading} filter={filter} onPageChange={changePage} />
+            </div>
           </div>
         </section>
 
         <aside className="lg:sticky lg:top-6 lg:self-start">
-          <AskPanel />
+          <AskPanel total={stats?.total} />
         </aside>
       </main>
     </div>
