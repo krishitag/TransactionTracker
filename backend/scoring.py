@@ -3,6 +3,7 @@
 Uses the bundle saved by train_model.py and the same feature code (features.py)
 that training used, so live features match training features exactly.
 """
+import hashlib
 import os
 
 import joblib
@@ -27,6 +28,12 @@ def load_bundle():
     if _bundle is None:
         _bundle = joblib.load(MODEL_PATH)
     return _bundle
+
+
+def model_version():
+    """Short fingerprint of the saved model file; changes whenever the model is retrained."""
+    with open(MODEL_PATH, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()[:12]
 
 
 def risk_level(score):

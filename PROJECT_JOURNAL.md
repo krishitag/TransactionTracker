@@ -153,7 +153,7 @@ A **feature** is a number that describes a transaction in a way that helps tell 
 | ~~`transactions` table isn't created anywhere~~ ✅ fixed | | Task B4, see section 13 |
 | ~~`train_model.py` never trains a model~~ ✅ fixed | | Task A2, see section 11 |
 | ~~Feature code is copy-pasted in `features.py` and `train_model.py`~~ ✅ fixed | A bug fixed in one place won't be fixed in the other. Training and live scoring could compute features differently ("training/serving skew"). | One `compute_features()` function that both import (task A1, see section 10) |
-| No `requirements.txt` | Nobody else (or CI) can install the project | Add it (task B5) |
+| ~~No `requirements.txt`~~ ✅ fixed | Nobody else (or CI) can install the project | Task B5, see section 14 |
 
 **Interview line on training/serving skew:** "I made sure training and live scoring share a single feature function, so the model sees features computed the same way in both places."
 
@@ -319,6 +319,71 @@ Putting rules in the database (and not only in Python) means that even buggy cod
 
 ---
 
+## 14. Task B5: `requirements.txt`
+
+**What:** a list of the exact Python packages and versions the backend needs. Anyone (a teammate, CI, Render) runs `pip install -r requirements.txt` and gets the same setup.
+
+**Why pin versions (`==`):** without pins, a future pandas release could change behaviour and break the code with no change on our side. Pinned versions make the build **reproducible**.
+
+**Why the RAG packages aren't in yet:** `sentence-transformers` pulls in PyTorch (about 1 GB). We add it in Phase C, when code actually uses it.
+
+---
+
+## 15. Task B6: scoring wired into `POST /transactions`
+
+**The request flow:**
+
+```
+client ──POST /transactions──▶ FastAPI
+   1. Pydantic validates input            (bad data → 422)
+   2. clean: strip "fraud_", times → UTC
+   ┌──────────── one DB transaction ────────────┐
+   3. INSERT transaction (ON CONFLICT → 409)     │
+   4. SELECT minimal card history                │
+   5. score_transaction(new, history)            │
+   6. INSERT risk_scores (+ model_version)       │
+   └──── commit, or roll back everything ───────┘
+   7. close connection (always)
+◀── 201 {id, risk_score, risk_level, reasons}
+```
+
+**Key decisions:**
+
+1. **Validation at the edge.** `amount >= 0`, latitude −90 to 90, longitude −180 to 180. Bad input gets a clear `422` before it reaches the database.
+2. **Duplicates → `409 Conflict`.** `INSERT ... ON CONFLICT (trans_num) DO NOTHING RETURNING id` returns nothing if the ID already exists, so we answer "already exists" instead of crashing with a 500. This matters because payment systems often **retry** requests, so receiving the same transaction twice is normal. Handling a repeat safely like this is called **idempotency**.
+3. **Atomic: all or nothing.** The insert, scoring and score insert happen inside one database transaction (`with conn:`). If anything fails, Postgres undoes it all, so you never get a transaction without a score. This is the "A" (Atomicity) in **ACID**.
+4. **Only the history the features need.** The two features look backwards: velocity needs the **last hour**, and "first time at this merchant" needs to know whether **one** earlier visit exists. So the query fetches just those rows (`UNION` of two small queries), not years of history. Both use the `(cc_num, trans_time)` index, so it stays fast however busy the card is. I checked this on 300 real transactions: **0 differences** from scoring with full history.
+5. **Out-of-order arrivals are handled.** History is filtered by the transaction's own `trans_time`, not by when it reached us. A late-arriving old transaction is scored as of its own time.
+6. **Column name mapping.** The API and database say `amount` and `trans_time`, while the model was trained on Sparkov's `amt` and `trans_date_trans_time`. `to_scoring_row()` translates in one place.
+7. **Model version.** A 12-character fingerprint (SHA-256 hash) of the model file is stored with every score. If you retrain, new scores carry the new version, so you can always tell which model produced which score.
+8. **Connection always closed** (`try/finally`), even on errors. The old code leaked a connection on every failed insert, and enough of those would exhaust Postgres's connection limit.
+
+**End-to-end test results** (one card, 4 purchases within 30 minutes):
+
+| Txn | What happened | Score | Level | Reasons |
+|---|---|---|---|---|
+| t1 | $45 groceries, first visit | 0.25 | low | First time at Kuhic LLC |
+| t2 | $30, same shop, 10 min later | 0.29 | low | 1 other transaction in the past hour |
+| t3 | $60 gas, new shop | 0.70 | medium | 2 in the past hour; first time at Predovic Inc |
+| t4 | $900 electronics, new shop | 0.9998 | high | Amount 13× typical; 3 in the past hour; first time |
+| t4 again | duplicate | n/a | **409** | already exists |
+| t5 | amount −5 | n/a | **422** | amount must be ≥ 0 |
+
+The database held exactly 4 scored rows: the failed requests saved nothing, and merchant names had no `fraud_` prefix.
+
+**Things I learned from the results:**
+- **My prediction was wrong, and the model explains why.** I expected t2 (a repeat shop) to score lowest, but t2 (0.29) is slightly above t1 (0.25). The velocity weight (+0.43) is bigger than the new-merchant weight (+0.30), so "1 transaction in the last hour" adds more risk than "first time at this shop" does. With an interpretable model you can check a surprise like this directly against the weights.
+- **Velocity is strong enough to push a $60 gas purchase to "medium"** (3 purchases in 20 minutes). That's reasonable for fraud detection, but a real system would tune it, for example by velocity *relative to this card's usual pace*. Good "what would you improve?" material.
+- **The IDs started at 4, not 1.** Earlier test inserts used up IDs 1 to 3. Postgres sequences **never roll back**: a rolled-back insert or an `ON CONFLICT` still consumes the number. That's by design, so concurrent inserts never have to wait on each other. Gaps in IDs are normal, and you should never rely on IDs being consecutive.
+
+**Known simplifications (fine for this project, good to mention):**
+- A new database connection per request. A production service would use a **connection pool**.
+- Scoring runs inside the request. At large scale you might score asynchronously from a queue.
+
+**Interview line:** "The ingest endpoint is idempotent on transaction ID and atomic: the insert, feature lookup, scoring and score write all happen in one database transaction, so there's never an unscored transaction. For features, I query only the history the model needs, the last hour plus one prior visit to the same merchant, using a composite index, and I verified it produces identical scores to the full history."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -342,3 +407,8 @@ Putting rules in the database (and not only in Python) means that even buggy cod
 | 2026-10-17 | Separate `transactions` (facts) and `risk_scores` (model output) | Rescoring doesn't touch facts; track model_version |
 | 2026-10-17 | Local Docker Postgres on port 5433, not Supabase | Supabase project gone; 5432 taken by Homebrew Postgres |
 | 2026-10-17 | Integrity rules as DB constraints + (cc_num, trans_time) index | Bad data rejected at the source; fast history lookups |
+| 2026-10-17 | Pin versions; add RAG packages only in Phase C | Reproducible installs; avoid ~1 GB of unused packages |
+| 2026-10-17 | Idempotent insert (409 on duplicate trans_num) | Payment systems retry; repeats must be safe |
+| 2026-10-17 | Insert + score + score-write in one DB transaction | Never leave a transaction unscored |
+| 2026-10-17 | Fetch only last-hour + first-same-merchant history | Same features as full history, fast at any scale |
+| 2026-10-17 | Model version = SHA-256 prefix of the model file | Trace every score to the model that produced it |
