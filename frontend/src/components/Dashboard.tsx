@@ -8,6 +8,7 @@ import StatBand from "./StatBand";
 import TransactionTable from "./TransactionTable";
 
 const PAGE_SIZE = 20;
+const WAKING_NOTICE_AFTER_MS = 4000;
 
 // The line under the table title describes the rows on screen: the high-risk share for "All",
 // otherwise the selected group's own count and money.
@@ -38,12 +39,22 @@ export default function Dashboard() {
   const requestKey = `${filter ?? "all"}:${offset}`;
   const loading = loaded?.key !== requestKey && !error;
 
+  // The free backend host sleeps when idle and takes about a minute to wake. If the first
+  // answer is slow, say so, rather than showing an empty page that looks broken.
+  const [slowStart, setSlowStart] = useState(false);
+  const waking = slowStart && !stats && !error;
+
   useEffect(() => {
     const controller = new AbortController();
+    const timer = setTimeout(() => setSlowStart(true), WAKING_NOTICE_AFTER_MS);
     getStats(controller.signal)
       .then(setStats)
-      .catch((e) => e.name !== "AbortError" && setError(e.message));
-    return () => controller.abort();
+      .catch((e) => e.name !== "AbortError" && setError(e.message))
+      .finally(() => clearTimeout(timer));
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, []);
 
   // Refetch the table whenever the filter or page changes; abort the previous request
@@ -92,6 +103,13 @@ export default function Dashboard() {
           </p>
         </div>
       </header>
+
+      {waking && (
+        <p role="status" className="mx-4 mt-6 rounded-xl bg-accent-wash px-5 py-4 text-body text-ink sm:mx-8">
+          Waking up the server. This demo runs on free hosting that sleeps when idle, so the first load takes
+          about a minute. The data appears here on its own.
+        </p>
+      )}
 
       <StatBand stats={stats} active={filter} onSelect={selectFilter} />
 
