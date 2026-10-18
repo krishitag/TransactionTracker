@@ -18,6 +18,8 @@ task moves. `DESIGN.md` is the single design source for all UI.
 - **The user runs infrastructure themselves:** Docker, docker compose, psql, database changes,
   starting/stopping servers, `pip`/`npm install`. Write the code, explain it, give the commands, and
   say what output to expect. Reading files, running Python/TS checks, linters and tests is fine.
+- **Deployment is done by the user** (Neon, Render, Vercel accounts, settings, deploys). Claude writes
+  the files and gives step-by-step guides (what to click/type, what to expect), then debugs from screenshots.
 - **Explain before writing code**, especially ML/data code, in plain language. The user does not have
   a strong ML background and is preparing for interviews.
 - After each task, add a journal section with **What / Why / Interview line**, a decision-log row, and

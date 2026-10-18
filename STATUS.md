@@ -83,7 +83,8 @@ Legend: ✅ done · 🟡 partly done · ⬜ not started · ⛔ blocked
 | E1 | pytest (features, scorer, Gemini key fallback, citation check) + small committed data sample + GitHub Actions (Python lint + tests, frontend tsc + ESLint + build) | ✅ CI run #2 (`ea2c52d`) green: backend ruff + 43 tests, frontend typegen + tsc + ESLint + build. Run #1 failed on `LayoutProps` (fixed with `next typegen`) |
 | E2 | Dockerfile for the backend (CPU-only torch, embedding model baked in at build) | ✅ built (593 MB compressed); under 512 MB: peak 441 MiB after 4 questions, no growth (444 before memory savers); `/health` OK; Gemini 503 handled cleanly |
 | E3 | Neon Postgres + pgvector: schema, seed the 2,440 transactions | ✅ Neon project `transaction-risk` (Postgres 16.15, pgvector 0.8.0, AWS Singapore, pooled connection in gitignored `backend/.env.neon`). Seeded through the API: 2,440 rows, all embedded, 141 high / 126 fraud, model v2 only, 19 MB. Mac→Neon round trip 42 ms |
-| E4 | Backend on Render (Docker; env vars for DB, Gemini keys, `FRONTEND_ORIGINS`); check memory fits 512 MB | ⬜ |
+| E4 | Backend on Render (Docker; env vars for DB, Gemini keys, `FRONTEND_ORIGINS`); check memory fits 512 MB | 🟡 guide given (Singapore, root dir `backend`, Docker, free, health check `/health`, env from `.env.neon` + `FRONTEND_ORIGINS`) |
+| E4b | Before sharing publicly: protect `POST /transactions` with a secret key; per-visitor rate limit on `/ask` (Gemini quota) | ⬜ to explain after E4 |
 | E5 | Dashboard on Vercel (`frontend/`, `NEXT_PUBLIC_API_URL`), then CORS for the Vercel URL | ⬜ |
 | E6 | README: what, screenshot, live link, architecture, model, results + limitations, run locally, dataset link | 🟡 README + RESULTS.md + `backend/.env.example` written; live link and CI badge go green after deploy / first CI run |
 

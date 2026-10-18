@@ -1,0 +1,11 @@
+# Allow-list: ignore everything, then let in only what the image needs.
+# This guarantees .env (secrets), venv/, tests/ and data never enter the image.
+*
+!requirements.txt
+!main.py
+!ask.py
+!embeddings.py
+!features.py
+!scoring.py
+!models/
+!models/risk_model.joblib

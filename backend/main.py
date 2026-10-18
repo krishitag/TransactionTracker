@@ -188,6 +188,12 @@ def create_transaction(txn: TransactionIn):
     }
 
 
+@app.get("/health")
+def health():
+    """Liveness check for the host (Render pings it). No database call, so it stays cheap."""
+    return {"status": "ok", "model_version": MODEL_VERSION}
+
+
 @app.get("/stats")
 def stats():
     row = read_rows(
