@@ -1,6 +1,7 @@
-# secrets
+# secrets: every .env file (e.g. backend/.env.neon), except the committed template
 .env
-backend/.env
+.env.*
+!.env.example
 
 # python
 venv/

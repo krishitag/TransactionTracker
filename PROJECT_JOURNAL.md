@@ -849,6 +849,22 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 
 ---
 
+## 28. E3: the cloud database on Neon
+
+**What:** a free Neon Postgres in **AWS Singapore**, with pgvector turned on, the same `schema.sql`, and the same 2,440 transactions.
+
+**Why these choices:**
+- **Singapore:** closest to India, and Render also has a Singapore region. The backend and database should sit in the **same region**, because every API request makes several database round trips, and each one between continents costs ~150–250 ms.
+- **Seed through the API, not by copying the database:** the local backend runs with `--env-file .env.neon`, so it writes to Neon, and `seed_transactions.py` posts every transaction through `POST /transactions`. Each one is validated, scored by model v2, embedded and stored exactly as in production, which also tests the cloud database end to end.
+- **`backend/.env.neon`, never committed:** `.gitignore` now ignores every `.env.*` except `.env.example`. The local `.env` keeps pointing at Docker, so switching databases means choosing a file, not editing secrets.
+- **Same numbers expected:** same data + same model = 2,440 / 141 / 113 / 2,186, so a mismatch would reveal a problem.
+
+**Result:** Postgres 16.15 + pgvector 0.8.0; the schema created 2 tables and 7 indexes (including HNSW). The connection uses Neon's **pooler** endpoint (better for many short connections; our read path uses `SET TRANSACTION READ ONLY`, which is transaction-scoped and so safe behind a pooler). Mac → Singapore round trip: 42 ms. After seeding, **checked on Neon directly, not through the API** (the API's numbers would look identical whichever database it used): 2,440 rows, all embedded, 141 high / 126 fraud, only model `f683e347ae3d`, no `fraud_` prefixes, 19 MB of the 1 GB free plan. *Lesson: when two systems should produce identical numbers, identical numbers don't show which one you're looking at. Check the source directly.*
+
+**Interview line:** "I moved the database to Neon's serverless Postgres with pgvector, in the same region the backend will run in, and loaded it through my own API so every row went through the production scoring and embedding path. Then I verified the cloud database directly: every row present, every embedding present, and every risk count identical to local."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
