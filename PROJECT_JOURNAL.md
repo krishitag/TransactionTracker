@@ -877,6 +877,23 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 
 ---
 
+## 30. E5: the dashboard on Vercel, and the project is live
+
+**What:** the Next.js dashboard deployed on Vercel at **https://transaction-risk-monitor.vercel.app**, talking to the Render API, which reads from Neon.
+
+**Steps and why:**
+- **Single-project import of `frontend/`.** Vercel detected both apps and suggested hosting them together ("Services"). Declined: the backend already runs on Render, and a PyTorch-sized Python API doesn't suit Vercel's serverless functions.
+- **`NEXT_PUBLIC_API_URL` = the Render URL.** `NEXT_PUBLIC_` values are compiled into the page at **build** time, so changing it means redeploying. It isn't a secret (the browser needs it).
+- **CORS, the third time it mattered:** the page loaded but every request was blocked until the Vercel origin was added to Render's `FRONTEND_ORIGINS`. Same rule as the port-3100 bug: the backend allows exactly the origins it trusts.
+- **Cold starts:** Render's free plan sleeps after 15 min, and waking took over 90 s. The dashboard now shows "Waking up the server… about a minute" after 4 s without data, so a first-time visitor doesn't think it's broken.
+- **Again: "on my Mac" isn't "deployed".** The waking notice wasn't committed at first, so the first Vercel build didn't have it. Both hosts build from GitHub, so `git status` should be clean before calling something deployed.
+
+**Verified:** a real browser on the live URL shows all the data (2,440 / 141 / 113 / 2,186) with **0 console errors**. CORS headers allow the Vercel origin only.
+
+**Interview line:** "It's deployed as three free services: Next.js on Vercel, the FastAPI container on Render, and Postgres with pgvector on Neon, all in Singapore except the CDN-served frontend. Render only deploys after CI passes, secrets live in the platforms' settings, CORS allows only the real frontend, and the UI explains the free tier's cold start instead of looking broken."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -950,3 +967,5 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 | 2026-10-18 | `GET /health` (no DB call) for the host's health checks | Cheap liveness checks that don't wake the database |
 | 2026-10-18 | The user does all deployment steps; Claude writes files + step-by-step guides | User's choice: learn the deploy hands-on |
 | 2026-10-18 | Render: Singapore, free plan, Docker from `backend/`, auto-deploy only after CI passes | Same region as Neon; broken commits can't go live |
+| 2026-10-18 | Vercel: single-project import of `frontend/` (not multi-service); CORS allows only the Vercel URL + localhost | Backend already on Render; least-privilege browser access |
+| 2026-10-18 | "Waking up the server" notice after 4 s without data | Free-tier cold start (> 90 s) shouldn't look like a broken site |

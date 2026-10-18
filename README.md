@@ -7,7 +7,8 @@ answers questions about the transactions and cites the exact transactions it use
 
 ![Dashboard: risk-tinted stat cards that filter the table, transactions with risk badges, and the "Ask the AI analyst" panel](docs/dashboard.png)
 
-**Live demo:** coming soon (deployment is the current phase).
+**Live demo:** **[transaction-risk-monitor.vercel.app](https://transaction-risk-monitor.vercel.app)** · API: [transaction-risk-api-4g3d.onrender.com/docs](https://transaction-risk-api-4g3d.onrender.com/docs)
+*Free hosting: if nobody has visited for a while, the backend takes about a minute to wake up. The page says so and fills in by itself.*
 **Results:** [RESULTS.md](RESULTS.md), the model's numbers, the AI answers checked against SQL, and the known blind spots.
 
 > Built on **simulated** data with a deliberately simple, interpretable model. A portfolio project, not a
@@ -33,6 +34,8 @@ answers questions about the transactions and cites the exact transactions it use
 Full tables, the v1 → v2 comparison and the limitations are in **[RESULTS.md](RESULTS.md)**.
 
 ## Architecture
+
+Deployed as: **Vercel** (dashboard) → **Render**, Singapore (FastAPI in Docker) → **Neon**, Singapore (Postgres + pgvector), with Gemini for answers. Render auto-deploys only after GitHub Actions CI passes.
 
 ```
 Next.js dashboard ──fetch──▶ FastAPI ──▶ Postgres 16 + pgvector
