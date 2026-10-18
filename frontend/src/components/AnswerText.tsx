@@ -9,7 +9,15 @@ const INLINE = /(\*\*[^*]+\*\*|\[#\d+\])/g;
 function renderInline(text: string, onCite: (id: number) => void, validIds: Set<number>): ReactNode[] {
   return text.split(INLINE).map((part, i) => {
     const bold = part.match(/^\*\*([^*]+)\*\*$/);
-    if (bold) return <strong key={i} className="font-semibold">{bold[1]}</strong>;
+    // Bold text can contain citations (the model sometimes writes **[#481]**), so render its
+    // inside the same way. It holds no "**", so this recursion is one level deep.
+    if (bold) {
+      return (
+        <strong key={i} className="font-semibold">
+          {renderInline(bold[1], onCite, validIds)}
+        </strong>
+      );
+    }
     const cite = part.match(/^\[#(\d+)\]$/);
     if (cite) {
       const id = Number(cite[1]);

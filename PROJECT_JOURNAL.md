@@ -826,6 +826,29 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 
 ---
 
+## 27. E2: the backend Dockerfile
+
+**What:** `backend/Dockerfile` packages the API into one image: Python 3.12 (slim), the pinned packages with **CPU-only PyTorch**, the five runtime `.py` files, the trained model, and the embedding model **downloaded at build time**.
+
+**Why each choice:**
+- **Packages before code:** Docker caches each step, so a code-only change rebuilds in seconds instead of reinstalling everything.
+- **CPU-only PyTorch:** servers have no GPU, so the GPU build is wasted size.
+- **Embedding model baked in + offline mode (`HF_HUB_OFFLINE=1`):** a faster start, and the server never depends on Hugging Face being reachable.
+- **`.dockerignore` as an allow-list:** everything is excluded except the files listed, so `.env` (secrets), `venv/`, tests and data can't enter the image, even if new files are added later. Secrets are passed in at run time (Render's environment settings).
+- **Non-root user:** if the app were ever exploited, it couldn't modify the system.
+- **`--host 0.0.0.0 --port ${PORT:-8000}`:** Render tells the app its port through `PORT`, and `0.0.0.0` accepts outside connections. **One worker** keeps memory low.
+- **New `GET /health`:** a liveness check for Render that doesn't touch the database, so health pings stay cheap and don't wake the database.
+
+**The 512 MB test:** Render's free plan has 512 MB of memory. Before deploying, the container is run locally with `docker run --memory=512m` (the same limit) and watched with `docker stats` while using the dashboard, so we measure instead of hoping.
+
+**First build and 512 MB test:** build ~6 min (packages 3.3 min, embedding model 1.9 min). Build context only 42.55 kB, which shows the allow-list working. Image 593 MB compressed, 2.41 GB unpacked (mostly PyTorch + scikit-learn/pandas). Under `--memory=512m`: started cleanly with the baked-in model, `/health` OK, one `/ask` answered in 4.2 s, **peak 444 MiB of 512 (87%)**. It fits but with only ~68 MiB headroom, at risk from concurrent questions, slow memory growth, or Render measuring differently. **Tuning:** `OMP_NUM_THREADS=1` (and the MKL/OpenBLAS equivalents) so PyTorch doesn't keep a thread pool per CPU core, and `MALLOC_ARENA_MAX=2` to cap glibc's per-thread memory pools, a common fix for Python servers that creep. These are set at the end of the Dockerfile so the rebuild reuses the cached slow layers. ONNX stays as the backup plan.
+
+**Bug found while testing the container: bold citations weren't clickable.** Gemini sometimes writes `**[#481]**` (a citation inside bold). The safe answer renderer handled bold first and printed its contents as plain text, so the `[#481]` inside never became a button. Fix: bold content now goes through the same inline renderer, so citations inside bold become buttons too (one level deep, since bold can't contain `**`). *Lesson: LLM output varies in format from run to run, so a renderer has to handle combinations, not just each format on its own.*
+
+**Interview line:** "I containerised the API with a slim Python image, CPU-only PyTorch and the embedding model baked in, an allow-list `.dockerignore` so secrets can't leak into the image, and a non-root user. Before deploying to a 512 MB free tier, I ran the container under the same memory limit locally to check it fits."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -895,3 +918,6 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 | 2026-10-18 | Deploy: Vercel (frontend) + Render Docker (backend) + **Neon** (Postgres + pgvector) | All free; Neon doesn't expire (Render DB: 30 days) or pause (Supabase) |
 | 2026-10-18 | Tests/CI before deploying; 200-row committed sample (fixed seed); fake LLM client in tests | Safe first step; CI needs no data download, DB, network or keys |
 | 2026-10-18 | ruff with default rules + import sorting (not flake8-bugbear) | Bugbear flags FastAPI's standard `Query()` defaults; keep lint signal high |
+| 2026-10-18 | Dockerfile: slim Python, CPU torch, embedding model baked in + offline, allow-list `.dockerignore`, non-root, 1 worker | Small, reproducible, no secrets in the image, fits a small server |
+| 2026-10-18 | `GET /health` (no DB call) for the host's health checks | Cheap liveness checks that don't wake the database |
+| 2026-10-18 | The user does all deployment steps; Claude writes files + step-by-step guides | User's choice: learn the deploy hands-on |
