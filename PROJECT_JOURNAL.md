@@ -865,6 +865,18 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 
 ---
 
+## 29. E4: the backend on Render
+
+**Setup (done by me in Render's dashboard):** Web Service from the GitHub repo, **Docker**, root directory `backend`, region **Singapore** (next to Neon), **free** plan (0.1 CPU, 512 MB). Environment variables were imported from `.env.neon` (database + Gemini keys) plus `FRONTEND_ORIGINS`. They live only in Render's settings, never in the code or image. Health check path `/health`. **Auto-deploy "After CI Checks Pass"**, so a commit that fails GitHub Actions never goes live.
+
+**Bug on the first deploy: "works locally, missing in Git".** The app started fine, but Render's health check got **404** on `/health` every 10 seconds. The cause: the `/health` endpoint and `.dockerignore` were on my Mac but had never been committed, and Render builds from **GitHub**, not my laptop. I found it by checking what the deployed commit actually contained (`git show 40c6348:backend/main.py`). Fix: commit, push, CI green, cancel the stuck deploy, and the new deploy went live. *Lesson: a deploy is only as current as the last push. `git status` before deploying.*
+
+**Verified from outside:** `/health` 0.5 s; `/stats` returns the Neon numbers; `/ask` answered through Gemini in 8.1 s with exact counts; a request from an unknown website origin gets no CORS permission. **Cold start:** after sleeping, the first request took over 90 s (the free server boots, then loads PyTorch and the embedding model on 0.1 CPU).
+
+**Interview line:** "The API runs as a Docker container on Render, auto-deployed only after CI passes, with secrets in the platform's environment settings. My first deploy failed its health check because an endpoint existed locally but had never been pushed. I traced it by inspecting the deployed commit, which taught me to treat Git, not my laptop, as the source of truth."
+
+---
+
 ## Decision log (add new entries at the bottom)
 
 | Date | Decision | Why |
@@ -937,3 +949,4 @@ Worth noticing for interviews: **Low is 90% of transactions but only 51% of the 
 | 2026-10-18 | Dockerfile: slim Python, CPU torch, embedding model baked in + offline, allow-list `.dockerignore`, non-root, 1 worker | Small, reproducible, no secrets in the image, fits a small server |
 | 2026-10-18 | `GET /health` (no DB call) for the host's health checks | Cheap liveness checks that don't wake the database |
 | 2026-10-18 | The user does all deployment steps; Claude writes files + step-by-step guides | User's choice: learn the deploy hands-on |
+| 2026-10-18 | Render: Singapore, free plan, Docker from `backend/`, auto-deploy only after CI passes | Same region as Neon; broken commits can't go live |
